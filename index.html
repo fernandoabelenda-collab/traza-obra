@@ -1275,21 +1275,23 @@ function vControl(){
   }
   // KPIs
   const total=ctrl.length;
-  const completos=ctrl.filter(c=>c.estado_informes==='COMPLETO').length;
-  const sinInf=ctrl.filter(c=>c.estado_informes==='SIN_INFORME').length;
-  const parcial=ctrl.filter(c=>c.estado_informes==='PARCIAL').length;
+  const completos=ctrl.filter(c=>c.estado==='ENVIADO').length;
+  const sinInf=ctrl.filter(c=>c.estado==='SIN_INFORME').length;
+  const sinEnviar=ctrl.filter(c=>c.estado==='SIN_ENVIAR').length;
   const vencidos=ctrl.filter(c=>c.vencido).length;
   // filtros
   const clientes=[...new Set(ctrl.map(c=>c.cliente).filter(Boolean))].sort();
+  const tecnicos=[...new Set(ctrl.map(c=>c.tecnico).filter(Boolean))].sort();
   const fmt=(a,s)=>a.map(x=>`<option value="${esc(x)}" ${s===x?'selected':''}>${esc(x)}</option>`).join('');
   let lista=ctrl.slice();
   if(FC.estado==='vencidos') lista=lista.filter(c=>c.vencido);
-  else if(FC.estado==='sin') lista=lista.filter(c=>c.estado_informes==='SIN_INFORME');
-  else if(FC.estado==='parcial') lista=lista.filter(c=>c.estado_informes==='PARCIAL');
-  else if(FC.estado==='completo') lista=lista.filter(c=>c.estado_informes==='COMPLETO');
+  else if(FC.estado==='sin') lista=lista.filter(c=>c.estado==='SIN_INFORME');
+  else if(FC.estado==='sinenviar') lista=lista.filter(c=>c.estado==='SIN_ENVIAR');
+  else if(FC.estado==='completo') lista=lista.filter(c=>c.estado==='ENVIADO');
   if(FC.cliente) lista=lista.filter(c=>c.cliente===FC.cliente);
+  if(FC.tecnico) lista=lista.filter(c=>c.tecnico===FC.tecnico);
   if(FC.ot){const q=FC.ot.replace(/\D/g,''); if(q) lista=lista.filter(c=>String(c.ot).includes(q));}
-  if(FC.q){const q=FC.q.toLowerCase(); lista=lista.filter(c=>[c.ot,c.cliente].join(' ').toLowerCase().includes(q));}
+  if(FC.q){const q=FC.q.toLowerCase(); lista=lista.filter(c=>[c.ot,c.cliente,c.tecnico].join(' ').toLowerCase().includes(q));}
   // vencidos primero, luego por fecha
   lista.sort((a,b)=> (b.vencido-a.vencido) || String(b.fecha_trabajo).localeCompare(String(a.fecha_trabajo)));
 
@@ -1298,37 +1300,41 @@ function vControl(){
     <div class="actions"><button class="btn" onclick="A.recargarControl()">Actualizar</button>
       <button class="btn pri" onclick="A.go('informes')">${svg('up')} Subir informes (END)</button></div></div>
   <div class="kpis" style="padding:0 0 11px">
-    <div class="kpi ${vencidos?'b':'g'}"><div class="k">Vencidos (+48h)</div><div class="v">${vencidos}</div><div class="s">avisar al técnico</div></div>
+    <div class="kpi ${vencidos?'b':'g'}"><div class="k">Vencidos (+48h)</div><div class="v">${vencidos}</div><div class="s">requieren acción</div></div>
+    <div class="kpi ${sinInf?'b':''}"><div class="k">Sin informe</div><div class="v">${sinInf}</div><div class="s">llamar al técnico</div></div>
+    <div class="kpi ${sinEnviar?'w':''}"><div class="k">Sin enviar</div><div class="v">${sinEnviar}</div><div class="s">avisar a Yumara</div></div>
     <div class="kpi g"><div class="k">Completos</div><div class="v">${completos}</div><div class="s">enviados al cliente</div></div>
-    <div class="kpi ${parcial?'w':''}"><div class="k">Parciales</div><div class="v">${parcial}</div><div class="s">falta enviar alguno</div></div>
-    <div class="kpi ${sinInf?'b':''}"><div class="k">Sin informe</div><div class="v">${sinInf}</div><div class="s">trabajo sin informe</div></div>
-    <div class="kpi a"><div class="k">Trabajos con OT</div><div class="v">${total}</div><div class="s">planificados</div></div>
+    <div class="kpi a"><div class="k">Trabajos</div><div class="v">${total}</div><div class="s">técnico·día·OT</div></div>
   </div>
   <div class="searchbar">
     <button class="btn sm ${FC.estado===''?'on':''}" onclick="A.setFC('estado','')">Todos</button>
     <button class="btn sm ${FC.estado==='vencidos'?'on':''}" onclick="A.setFC('estado','vencidos')">🔴 Vencidos</button>
     <button class="btn sm ${FC.estado==='sin'?'on':''}" onclick="A.setFC('estado','sin')">Sin informe</button>
-    <button class="btn sm ${FC.estado==='parcial'?'on':''}" onclick="A.setFC('estado','parcial')">Parciales</button>
+    <button class="btn sm ${FC.estado==='sinenviar'?'on':''}" onclick="A.setFC('estado','sinenviar')">🟠 Sin enviar</button>
     <button class="btn sm ${FC.estado==='completo'?'on':''}" onclick="A.setFC('estado','completo')">🟢 Completos</button>
+    <select onchange="A.setFC('tecnico',this.value)"><option value="">Todos los técnicos</option>${fmt(tecnicos,FC.tecnico)}</select>
     <select onchange="A.setFC('cliente',this.value)"><option value="">Todos los clientes</option>${fmt(clientes,FC.cliente)}</select>
-    <input class="mono" style="width:110px" placeholder="OT…" value="${esc(FC.ot)}" oninput="A.setFC('ot',this.value)">
+    <input class="mono" style="width:100px" placeholder="OT…" value="${esc(FC.ot)}" oninput="A.setFC('ot',this.value)">
     <span class="dim">${lista.length} de ${total}</span>
   </div>
   <div class="card"><table class="t"><thead><tr>
-    <th>Estado</th><th>OT</th><th>Cliente</th><th>Fecha trabajo</th><th class="tar">Informes</th>
-    <th class="tar">Enviados</th><th>Último envío</th></tr></thead><tbody>
+    <th>Estado</th><th>Técnico</th><th>Cliente</th><th>OT</th><th>Fecha trabajo</th>
+    <th>Acción</th><th>Envío</th></tr></thead><tbody>
   ${lista.length?lista.map(c=>{
-    const badge = c.vencido?'<span class="badge b-bad">🔴 VENCIDO</span>'
-      :(c.estado_informes==='COMPLETO'?'<span class="badge b-ok">🟢 Completo</span>'
-      :(c.estado_informes==='SIN_INFORME'?'<span class="badge b-warn">Sin informe</span>'
-      :'<span class="badge b-warn">Parcial</span>'));
-    return `<tr>
-      <td>${badge}</td>
-      <td class="mono">${esc(c.ot)}</td>
+    let badge, accion;
+    if(c.estado==='ENVIADO'){ badge='<span class="badge b-ok">🟢 Enviado</span>'; accion='<span class="dim">—</span>'; }
+    else if(c.estado==='SIN_ENVIAR'){ badge='<span class="badge b-warn">🟠 Sin enviar</span>';
+      accion='<b style="color:var(--warn)">Avisar a Yumara</b> <span class="dim">(informe hecho, falta enviar)</span>'; }
+    else { badge='<span class="badge b-bad">🔴 Sin informe</span>';
+      accion='<b style="color:var(--bad)">Llamar al técnico</b>'; }
+    const venc=c.vencido?' <span class="badge b-bad" title="Más de 48 h desde el trabajo">+48h</span>':'';
+    return `<tr${c.vencido?' style="background:#FEF6F5"':''}>
+      <td>${badge}${venc}</td>
+      <td><b>${esc(c.tecnico||'—')}</b></td>
       <td>${esc(c.cliente||'—')}</td>
+      <td class="mono">${esc(c.ot)}</td>
       <td class="mono">${esc(fmtCorto(c.fecha_trabajo))}</td>
-      <td class="tar mono">${c.n_informes}</td>
-      <td class="tar mono">${c.n_enviados}${c.n_informes>c.n_enviados?' <span class="dim">/'+c.n_informes+'</span>':''}</td>
+      <td style="font-size:12px">${accion}</td>
       <td class="dim">${c.ultimo_envio?esc(new Date(c.ultimo_envio).toLocaleDateString('es-ES')):'—'}</td></tr>`;
   }).join(''):`<tr><td colspan="7"><div class="empty">Sin resultados con este filtro.</div></td></tr>`}
   </tbody></table></div>`;
