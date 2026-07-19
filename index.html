@@ -1155,10 +1155,13 @@ function vDatos(){
       <button class="btn" onclick="A.exportBackup()">${svg('dl')} Copia técnica (.trazaobra)</button>
       ${soyDelegado()?`<button class="btn dang" onclick="A.borrarTodo()">Borrar toda la planificación</button>`:''}
     </div>
-    <div class="alert i" style="margin-top:11px">Los datos viven en el servidor y los ve todo el equipo al instante.
-      La copia a Excel es tu red de seguridad: <b>descárgala de vez en cuando</b> y guárdala en Drive.
-      Al ser una herramienta interna no hay copia automática.</div>
+    <div class="alert g" style="margin-top:11px">✅ <b>Copias automáticas activas.</b>
+      Cada día, al abrir la app, se guarda una <b>copia en el servidor</b> (se conservan 30 días).
+      Y una vez al día se te <b>descarga un Excel</b> para que lo dejes en tu carpeta de Drive.
+      Puedes descargar una copia manual cuando quieras con los botones de arriba.</div>
   </div></div>
+  ${soyDelegado()?`<div class="card"><div class="ch">Copias en el servidor · restaurar</div>
+    <div class="cb" id="bkbox"><div class="dim">Cargando copias…</div></div></div>`:''}
 
   ${soyDelegado()?`<div class="card"><div class="ch">Usuarios con acceso</div>
     <table class="t"><thead><tr><th>Nombre</th><th>Rol</th><th>Estado</th></tr></thead><tbody>
@@ -1168,6 +1171,7 @@ function vDatos(){
       ||'<tr><td colspan="3" class="dim">—</td></tr>'}
     </tbody></table>
     <div class="lg">Los usuarios se gestionan desde Supabase → Authentication.</div></div>`:''}`;
+  if(soyDelegado()) setTimeout(pintaCopias,50);
 }
 /* ---------- Modal / IO ---------- */
 function openModal(h){$('modal').innerHTML=h;$('mask').classList.add('show');}
@@ -1235,7 +1239,17 @@ const A={go,render,closeModal,exportBackup,exportCSV,confirmarImport,undo,addFil
   salir:async()=>{ if(!confirm('¿Cerrar sesión?'))return; try{await SB.auth.signOut();}catch(e){} location.reload(); },
   config:()=>{ if(!confirm('Se olvidará la dirección del servidor en este equipo y tendrás que volver a introducirla. ¿Continuar?'))return;
     delCfg(); location.reload(); },
-  recargar:async()=>{ await recargar(); render(); toast('Actualizado desde el servidor.'); }
+  recargar:async()=>{ await recargar(); render(); toast('Actualizado desde el servidor.'); },
+  restaurar:async(dia,n)=>{
+    if(!soyDelegado()){toast('Solo el delegado puede restaurar.');return;}
+    if(!confirm('Restaurar la copia del '+fmtCorto(dia)+' ('+n+' filas).\n\nSe SUSTITUYE toda la planificación actual por esa foto.\n¿Continuar?'))return;
+    if(prompt('Escribe RESTAURAR para confirmar:')!=='RESTAURAR'){toast('Cancelado.');return;}
+    try{
+      const {data,error}=await SB.rpc('restaurar_backup',{p_dia:dia});
+      if(error) throw error;
+      await recargar(); render(); toast('Restauradas '+(data||0)+' filas de la copia del '+fmtCorto(dia)+'.');
+    }catch(e){ toast('No se pudo restaurar: '+esc(errTxt(e))); }
+  }
 };
 window.A=A;
 
@@ -1378,6 +1392,51 @@ async function entrarApp(){
   tick(); setInterval(tick,30000);
   setInterval(()=>{ if(view==='plan'&&!editing) pintaFilas(); },20000); // refresca candados caducados
   render();
+  copiasAlArrancar();   // Bloque 2.6: copia diaria en servidor + Excel a Drive
+}
+/* ============================================================
+   BLOQUE 2.6 · Copias de seguridad
+   C: dispara la copia diaria en el servidor (la 1ª persona del día).
+   B: si hace >24h, descarga un Excel automático para Drive.
+   ============================================================ */
+async function copiaServidorDiaria(){
+  try{
+    const {data,error}=await SB.rpc('crear_backup');
+    if(error) return;
+    const r=Array.isArray(data)?data[0]:data;
+    if(r&&r.hecho) toast('Copia de seguridad diaria guardada en el servidor ('+(r.n_filas||0)+' filas).');
+  }catch(e){ /* silencioso: la copia no debe molestar */ }
+}
+function excelAutomaticoDrive(){
+  try{
+    const K='trazaobra_ultima_copia_excel';
+    const ult=+(localStorage.getItem(K)||0);
+    const h=Date.now()-ult;
+    if(h < 24*3600*1000) return;           // menos de 24h: nada
+    if(!S.filas.length) return;            // nada que copiar
+    // Descargar Excel/CSV completo
+    exportCSV(true);
+    localStorage.setItem(K,String(Date.now()));
+    setTimeout(()=>toast('📥 Copia diaria descargada. <b>Guárdala en tu carpeta de Drive.</b>'),1200);
+  }catch(e){}
+}
+async function copiasAlArrancar(){
+  await copiaServidorDiaria();   // C — servidor
+  excelAutomaticoDrive();        // B — Excel a Drive
+}
+async function pintaCopias(){
+  const box=$('bkbox'); if(!box) return;
+  try{
+    const {data,error}=await SB.from('backups').select('dia,creado_en,n_filas').order('dia',{ascending:false});
+    if(error) throw error;
+    if(!data||!data.length){ box.innerHTML='<div class="dim">Aún no hay copias. Se creará una hoy al usar la app.</div>'; return; }
+    box.innerHTML=`<table class="t"><thead><tr><th>Día</th><th class="tar">Filas</th><th>Hora</th><th></th></tr></thead><tbody>
+      ${data.map(b=>`<tr><td class="mono">${esc(fmtCorto(b.dia))}</td><td class="tar mono">${b.n_filas}</td>
+        <td class="dim">${esc(new Date(b.creado_en).toLocaleString('es-ES'))}</td>
+        <td class="tar"><button class="btn sm dang" onclick="A.restaurar('${b.dia}',${b.n_filas})">Restaurar</button></td></tr>`).join('')}
+    </tbody></table>
+    <div class="lg">Restaurar sustituye TODA la planificación actual por la foto de ese día. Se conservan 30 días.</div>`;
+  }catch(e){ box.innerHTML='<div class="dim">No se pudieron cargar las copias.</div>'; }
 }
 A.ayudaCfg=()=>{
   gmsg(`En <b>Supabase</b> → tu proyecto → <b>Settings</b> (rueda dentada) → <b>API</b>:<br><br>
