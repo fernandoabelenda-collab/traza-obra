@@ -73,6 +73,16 @@ table.g{border-collapse:separate;border-spacing:0;font-size:12px;table-layout:fi
 .g th.rn,.g td.rn{position:sticky;left:0;z-index:6;background:#F7F9FC;width:34px;min-width:34px;text-align:center;
   color:#9AA7B6;font-size:10px;border-right:1px solid #CFD8E3}
 .g th.rn{z-index:7}
+/* Columnas fijas: FECHA, TECNICOS, CLIENTE se quedan pegadas al desplazar a la derecha */
+.g th.fix,.g td.fix{position:sticky;z-index:4;background:#fff}
+.g th.fix{z-index:6;background:#EEF2F7}
+.g td.fix{background:#FBFCFE;box-shadow:none}
+.g tr.hl td.fix{background:#F4F8FD}
+.g td.fix.sel{z-index:5}
+.g .fixedge{border-right:2px solid #CFD8E3 !important}
+@media(max-width:760px){ /* en pantalla estrecha, solo fijar técnico para no apretar */
+  .g th.fixcli,.g td.fixcli{position:static;box-shadow:none}
+}
 .g td{border-bottom:1px solid #EDF1F6;border-right:1px solid #EDF1F6;padding:0;height:26px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;background:#fff}
 .g td .cv{padding:4px 6px;display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-height:25px;line-height:17px}
 .g tr.hl td{background:#FBFDFF}
@@ -180,6 +190,7 @@ svg.ic{width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:2;strok
 <div class="mask" id="mask"><div class="modal" id="modal"></div></div>
 <div id="toast"></div>
 <input type="file" id="xlsInput" accept=".xlsx" style="display:none">
+<input type="file" id="infInput" accept=".trazaend,.json" style="display:none">
 <datalist id="dl_tecnicos"></datalist><datalist id="dl_clientes"></datalist>
 <datalist id="dl_centros"></datalist><datalist id="dl_proyectos"></datalist>
 <datalist id="dl_ubic"></datalist><datalist id="dl_tecnica"></datalist>
@@ -276,6 +287,34 @@ const DB={
     if(error) throw error; return data;
   },
   async remove(id){ const {error}=await SB.from('planificacion').delete().eq('id',id); if(error) throw error; },
+  // --- Informes (Bloque 3) ---
+  async loadInformes(){
+    const PAG=1000; let desde=0, todo=[];
+    for(let i=0;i<200;i++){
+      const {data,error}=await SB.from('informes')
+        .select('num_informe,ot,cliente,proyecto,equipo,tecnica,inspector,fecha_inspeccion,enviado,fecha_envio,destino')
+        .order('fecha_inspeccion',{ascending:true}).range(desde,desde+PAG-1);
+      if(error) throw error;
+      const lote=data||[]; todo=todo.concat(lote);
+      if(lote.length<PAG) break; desde+=PAG;
+    }
+    return todo;
+  },
+  async upsertInformes(arr){
+    const L=200, out=[];
+    for(let i=0;i<arr.length;i+=L){
+      const {data,error}=await SB.from('informes')
+        .upsert(arr.slice(i,i+L),{onConflict:'num_informe'})
+        .select('num_informe');
+      if(error) throw error; out.push(...(data||[]));
+      toast('Guardando informes… '+Math.min(i+L,arr.length)+' de '+arr.length);
+    }
+    return out;
+  },
+  async controlInformes(){
+    const {data,error}=await SB.from('v_control_informes').select('*');
+    if(error) throw error; return data||[];
+  },
   async removeRango(d1,d2){ const {error}=await SB.from('planificacion').delete().gte('fecha',d1).lte('fecha',d2); if(error) throw error; },
   async removeTodo(){ const {error}=await SB.from('planificacion').delete().neq('id','00000000-0000-0000-0000-000000000000'); if(error) throw error; },
   async lock(id){ const {data,error}=await SB.rpc('bloquear_fila',{p_id:id}); if(error) return false; return data===true; },
@@ -334,7 +373,7 @@ const FILA0=()=>({id:uid('f_'),fecha:'',tecnicos:'',tipo:'PRODUCTIVO',cliente:''
   tecnica:'',codigo:'',horario:'',unidades:null,udmedida:'',ot:'',pedido:'',estado:'',prod:null,esti:null,informes:'',obs:'',
   ts:now(),por:''});
 let S={meta:{app:'TRAZA-OBRA',v:4,created:now()},cfg:{eur:false,colExt:true},
-  filas:[],rechazos:[],imports:[],perfiles:[]};
+  filas:[],rechazos:[],imports:[],perfiles:[],informes:[],control:[]};
 let view='plan', dia=todayISO(), modo='dia', rango={desde:todayISO(),hasta:todayISO()};
 let F={q:'',tecnico:'',cliente:'',ot:'',tecnica:'',tipo:''};
 let sel={r:0,c:0}, editing=false, UNDO=[], APP_LISTA=false;
@@ -469,7 +508,10 @@ function vPlan(){
   </div>
   <div class="gridwrap" id="gw">
     <table class="g" id="gt"><thead><tr><th class="rn">#</th>
-      ${cv.map(c=>`<th style="width:${c.w}px">${esc(c.t)}</th>`).join('')}</tr></thead>
+      ${(()=>{const F=calcFijas(cv);return cv.map((c,ci)=>{const fj=F[ci];
+        const cl=['fj'in{}?'':'',fj?'fix':'',fj&&fj.ultima?'fixedge':'',fj&&fj.cli?'fixcli':''].filter(Boolean).join(' ');
+        const st=fj?`width:${c.w}px;left:${fj.left}px`:`width:${c.w}px`;
+        return `<th class="${cl}" style="${st}">${esc(c.t)}</th>`;}).join('')})()}</tr></thead>
     <tbody id="gb"></tbody></table>
   </div>
   <div class="keys">
@@ -486,8 +528,21 @@ function bloqueada(f){
   return nombreDe(f.editando_por)||'otro usuario';
 }
 function nombreDe(uid){ const p=(S.perfiles||[]).find(x=>x.id===uid); return p?p.nombre:''; }
+// Columnas que se quedan fijas al desplazar (si están visibles)
+const COLS_FIJAS=['fecha','tecnicos','tipo','cliente'];
+function calcFijas(cv){
+  // devuelve mapa: indice de columna -> {left, ultima}
+  const fijas={}; let left=34; // 34 = ancho de la columna '#'
+  const idxs=cv.map((c,i)=>({c,i})).filter(o=>COLS_FIJAS.includes(o.c.k));
+  idxs.forEach((o,n)=>{
+    fijas[o.i]={left, ultima:(n===idxs.length-1), cli:(o.c.k==='cliente')};
+    left+=(o.c.w||100);
+  });
+  return fijas;
+}
 function pintaFilas(){
   const filas=filasDelAmbito(), cv=colsVis();
+  const FIJ=calcFijas(cv);
   const tb=$('gb'); if(!tb) return;
   if(!filas.length){ tb.innerHTML=`<tr><td class="rn"></td><td colspan="${cv.length}" style="padding:26px;text-align:center;color:var(--dim)">
     Sin filas ${modo==='dia'?'el '+esc(fmtCorto(dia)):'en el rango'}.
@@ -503,11 +558,14 @@ function pintaFilas(){
       else if(c.ty==='date') txt=fmtCorto(v);
       else if(c.ty==='num') txt=(v==null||v==='')?'':nf(v,2);
       else txt=v==null?'':String(v);
-      const cls=[c.ty==='ro'?'ro':'',c.num||c.ty==='num'?'num':'',er,(ci===0&&bloqueada(f))?'lock':''].filter(Boolean).join(' ');
+      const fj=FIJ[ci];
+      const cls=[c.ty==='ro'?'ro':'',c.num||c.ty==='num'?'num':'',er,(ci===0&&bloqueada(f))?'lock':'',
+        fj?'fix':'', fj&&fj.ultima?'fixedge':'', fj&&fj.cli?'fixcli':''].filter(Boolean).join(' ');
+      const stFix=fj?` style="left:${fj.left}px"`:'';
       let dot='';
       if(c.k==='tipo'&&v&&v!=='PRODUCTIVO') dot=`<span class="dot" style="background:${v==='VACACIONES'||v==='BAJA'||v==='FESTIVO'?'#9AA7B6':'#6B4E9E'}"></span>`;
       if(c.k==='cliente'&&v&&f.tipo==='PRODUCTIVO') dot=`<span class="dot" style="background:${colorCli(v)}"></span>`;
-      return `<td class="${cls}" data-r="${ri}" data-c="${ci}" title="${esc(String(txt))}"><span class="cv">${dot}${esc(txt)}</span></td>`;
+      return `<td class="${cls}"${stFix} data-r="${ri}" data-c="${ci}" title="${esc(String(txt))}"><span class="cv">${dot}${esc(txt)}</span></td>`;
     }).join('')+`</tr>`;
   }).join('');
   const ne=filas.reduce((t,f)=>t+erroresFila(f).e,0), nw=filas.reduce((t,f)=>t+erroresFila(f).w,0);
@@ -1060,6 +1118,95 @@ async function procesar(file){
   return {filas:out,rech,desde:fechas[0]||null,hasta:fechas[fechas.length-1]||null,impId,file:file.name};
 }
 let _prev=null;
+/* ============================================================
+   BLOQUE 3 · Lectura del archivo .trazaend (informes desde END)
+   ============================================================ */
+const normNom = s => (s||'').normalize('NFKD').replace(/[\u0300-\u036f]/g,'').toUpperCase().replace(/\s+/g,' ').trim();
+// Mapa nombre completo (END) -> nombre corto (planificación OBRA)
+const MAP_INSPECTOR = {
+  'ALICIA MA BENITEZ GARCIA':'ALICIA','ALICIA MARIA BENITEZ GARCIA':'ALICIA',
+  'CLAUDIO ANDRES SANCHEZ CANDON':'CLAUDIO',
+  'JOSE LUIS ALFONSO':'LUIS',
+  'ALEJANDRO MONTIEL GARCIA':'ALEJANDRO','ALEJANDRO MONTIEL':'ALEJANDRO',
+  'FERNANDO REY':'NANDI',
+  'ANTONIO CAMACHO REINADO':'ANTONIO',
+  'RAUL RAMOS LOPEZ DE LA OSA':'RAUL','RAUL RAMOS LOPEZ':'RAUL',
+  'MARIO DIAZ SALTARES':'MARIO',
+  'JUAN MANUEL MORENO ROJAS':'JUAN MANUEL','JUAN MORENO':'JUAN MANUEL'
+};
+function inspectorCorto(nombreEnd){ const n=normNom(nombreEnd); return MAP_INSPECTOR[n]||n; }
+
+async function leerTrazaend(file){
+  // Los .trazaend pueden pesar mucho (los PDF van embebidos en "files").
+  // Para no cargar 130 MB en memoria, extraemos SOLO el bloque "informes"
+  // leyendo el archivo por trozos y cortando en cuanto lo tenemos.
+  const CHUNK=4*1024*1024;
+  let buf='', encontrado=null;
+  const marca='"informes"';
+  for(let pos=0; pos<file.size; pos+=CHUNK){
+    const trozo=await file.slice(pos,pos+CHUNK).text();
+    buf+=trozo;
+    const idx=buf.indexOf(marca);
+    if(idx>=0){
+      // buscar el '[' que abre el array y equilibrar corchetes
+      let i=buf.indexOf('[', idx);
+      if(i>=0){
+        let prof=0, fin=-1, enStr=false, esc=false;
+        for(let k=i;k<buf.length;k++){
+          const ch=buf[k];
+          if(enStr){ if(esc)esc=false; else if(ch==='\\')esc=true; else if(ch==='"')enStr=false; }
+          else { if(ch==='"')enStr=true; else if(ch==='[')prof++; else if(ch===']'){prof--; if(prof===0){fin=k;break;}} }
+        }
+        if(fin>=0){ encontrado=buf.slice(i,fin+1); break; }
+        // si no cerró aún, seguimos leyendo más trozos (buf sigue creciendo)
+      }
+    }
+    toast('Leyendo informes… '+Math.min(100,Math.round((pos+CHUNK)/file.size*100))+'%');
+  }
+  if(!encontrado){
+    // plan B: intentar parsear entero (archivos pequeños)
+    try{ const j=JSON.parse(await file.text());
+      if(j&&j.state&&Array.isArray(j.state.informes)) return j.state.informes; }catch(e){}
+    throw new Error('No encuentro los informes en el archivo. ¿Es un .trazaend válido?');
+  }
+  let arr; try{ arr=JSON.parse(encontrado); }catch(e){ throw new Error('El bloque de informes está dañado.'); }
+  if(!Array.isArray(arr)) throw new Error('El bloque de informes no es válido.');
+  return arr;
+}
+function procesarInformes(informes){
+  const out=[], rech=[];
+  informes.forEach(i=>{
+    const num=(i.numInforme||'').trim();
+    if(!num){ rech.push({motivo:'Sin nº de informe', raw:i}); return; }
+    const fi=(i.fechaInspeccion||'').slice(0,10);
+    out.push({
+      num_informe: num,
+      ot: String(i.ot||'').trim(),
+      cliente: (i.cliente||'').trim(),
+      proyecto: (i.proyecto||'').trim(),
+      equipo: (i.equipo||'').trim(),
+      tecnica: (i.tecnica||'').trim(),
+      inspector: (i.inspector||'').trim(),
+      fecha_inspeccion: /^\d{4}-\d{2}-\d{2}$/.test(fi)?fi:null,
+      enviado: !!i.correoEnviado,
+      fecha_envio: i.correoFecha||null,
+      destino: (i.correoDestino||'').trim()
+    });
+  });
+  return {out,rech};
+}
+let _prevInf=null;
+async function onTrazaend(file){
+  try{
+    toast('Leyendo '+esc(file.name)+'…');
+    const informes=await leerTrazaend(file);
+    const {out,rech}=procesarInformes(informes);
+    if(!out.length){ toast('No hay informes en el archivo.'); return; }
+    _prevInf={out,rech,file:file.name};
+    previewInformes(_prevInf);
+  }catch(e){ alert('No se pudo leer el archivo de informes:\n\n'+e.message); }
+}
+
 async function onXLSX(file){ try{ toast('Leyendo '+esc(file.name)+'…'); const R=await procesar(file);
   if(!R.filas.length&&!R.rech.length){toast('Sin filas reconocibles.');return;} _prev=R; preview(R);
  }catch(e){ alert('No se pudo leer:\n\n'+e.message); } }
@@ -1109,6 +1256,144 @@ async function confirmarImport(){
   }catch(e){ alert('Error al importar:\n\n'+errTxt(e)); }
   _prev=null;
 }
+function nVencidos(){ return (S.control||[]).filter(c=>c.vencido).length; }
+
+/* ============================================================
+   BLOQUE 3 · Vista CONTROL DE INFORMES (para Ana Alicia)
+   ============================================================ */
+let FC={estado:'',cliente:'',ot:'',q:''};
+function vControl(){
+  const ctrl=S.control||[];
+  if(!ctrl.length){
+    $('main').innerHTML=`<div class="phead"><div><h2>Control de informes</h2>
+      <div class="sub">Cruce de la planificación con los informes de TRAZA·END. Semáforo de 48 h.</div></div></div>
+    <div class="card"><div class="empty">
+      <h2 style="color:var(--tx);margin-bottom:8px">Aún no hay informes cargados</h2>
+      Sube el archivo <b>.trazaend</b> que descarga Yumara de TRAZA·END.<br><br>
+      <button class="btn pri" onclick="A.go('informes')">${svg('up')} Subir informes (END)</button>
+    </div></div>`; return;
+  }
+  // KPIs
+  const total=ctrl.length;
+  const completos=ctrl.filter(c=>c.estado_informes==='COMPLETO').length;
+  const sinInf=ctrl.filter(c=>c.estado_informes==='SIN_INFORME').length;
+  const parcial=ctrl.filter(c=>c.estado_informes==='PARCIAL').length;
+  const vencidos=ctrl.filter(c=>c.vencido).length;
+  // filtros
+  const clientes=[...new Set(ctrl.map(c=>c.cliente).filter(Boolean))].sort();
+  const fmt=(a,s)=>a.map(x=>`<option value="${esc(x)}" ${s===x?'selected':''}>${esc(x)}</option>`).join('');
+  let lista=ctrl.slice();
+  if(FC.estado==='vencidos') lista=lista.filter(c=>c.vencido);
+  else if(FC.estado==='sin') lista=lista.filter(c=>c.estado_informes==='SIN_INFORME');
+  else if(FC.estado==='parcial') lista=lista.filter(c=>c.estado_informes==='PARCIAL');
+  else if(FC.estado==='completo') lista=lista.filter(c=>c.estado_informes==='COMPLETO');
+  if(FC.cliente) lista=lista.filter(c=>c.cliente===FC.cliente);
+  if(FC.ot){const q=FC.ot.replace(/\D/g,''); if(q) lista=lista.filter(c=>String(c.ot).includes(q));}
+  if(FC.q){const q=FC.q.toLowerCase(); lista=lista.filter(c=>[c.ot,c.cliente].join(' ').toLowerCase().includes(q));}
+  // vencidos primero, luego por fecha
+  lista.sort((a,b)=> (b.vencido-a.vencido) || String(b.fecha_trabajo).localeCompare(String(a.fecha_trabajo)));
+
+  $('main').innerHTML=`<div class="phead"><div><h2>Control de informes</h2>
+    <div class="sub">Planificación → trabajo → informe hecho y enviado. El reloj de <b>48 h</b> arranca el día del trabajo y se para cuando el informe se <b>envía al cliente</b>.</div></div>
+    <div class="actions"><button class="btn" onclick="A.recargarControl()">Actualizar</button>
+      <button class="btn pri" onclick="A.go('informes')">${svg('up')} Subir informes (END)</button></div></div>
+  <div class="kpis" style="padding:0 0 11px">
+    <div class="kpi ${vencidos?'b':'g'}"><div class="k">Vencidos (+48h)</div><div class="v">${vencidos}</div><div class="s">avisar al técnico</div></div>
+    <div class="kpi g"><div class="k">Completos</div><div class="v">${completos}</div><div class="s">enviados al cliente</div></div>
+    <div class="kpi ${parcial?'w':''}"><div class="k">Parciales</div><div class="v">${parcial}</div><div class="s">falta enviar alguno</div></div>
+    <div class="kpi ${sinInf?'b':''}"><div class="k">Sin informe</div><div class="v">${sinInf}</div><div class="s">trabajo sin informe</div></div>
+    <div class="kpi a"><div class="k">Trabajos con OT</div><div class="v">${total}</div><div class="s">planificados</div></div>
+  </div>
+  <div class="searchbar">
+    <button class="btn sm ${FC.estado===''?'on':''}" onclick="A.setFC('estado','')">Todos</button>
+    <button class="btn sm ${FC.estado==='vencidos'?'on':''}" onclick="A.setFC('estado','vencidos')">🔴 Vencidos</button>
+    <button class="btn sm ${FC.estado==='sin'?'on':''}" onclick="A.setFC('estado','sin')">Sin informe</button>
+    <button class="btn sm ${FC.estado==='parcial'?'on':''}" onclick="A.setFC('estado','parcial')">Parciales</button>
+    <button class="btn sm ${FC.estado==='completo'?'on':''}" onclick="A.setFC('estado','completo')">🟢 Completos</button>
+    <select onchange="A.setFC('cliente',this.value)"><option value="">Todos los clientes</option>${fmt(clientes,FC.cliente)}</select>
+    <input class="mono" style="width:110px" placeholder="OT…" value="${esc(FC.ot)}" oninput="A.setFC('ot',this.value)">
+    <span class="dim">${lista.length} de ${total}</span>
+  </div>
+  <div class="card"><table class="t"><thead><tr>
+    <th>Estado</th><th>OT</th><th>Cliente</th><th>Fecha trabajo</th><th class="tar">Informes</th>
+    <th class="tar">Enviados</th><th>Último envío</th></tr></thead><tbody>
+  ${lista.length?lista.map(c=>{
+    const badge = c.vencido?'<span class="badge b-bad">🔴 VENCIDO</span>'
+      :(c.estado_informes==='COMPLETO'?'<span class="badge b-ok">🟢 Completo</span>'
+      :(c.estado_informes==='SIN_INFORME'?'<span class="badge b-warn">Sin informe</span>'
+      :'<span class="badge b-warn">Parcial</span>'));
+    return `<tr>
+      <td>${badge}</td>
+      <td class="mono">${esc(c.ot)}</td>
+      <td>${esc(c.cliente||'—')}</td>
+      <td class="mono">${esc(fmtCorto(c.fecha_trabajo))}</td>
+      <td class="tar mono">${c.n_informes}</td>
+      <td class="tar mono">${c.n_enviados}${c.n_informes>c.n_enviados?' <span class="dim">/'+c.n_informes+'</span>':''}</td>
+      <td class="dim">${c.ultimo_envio?esc(new Date(c.ultimo_envio).toLocaleDateString('es-ES')):'—'}</td></tr>`;
+  }).join(''):`<tr><td colspan="7"><div class="empty">Sin resultados con este filtro.</div></td></tr>`}
+  </tbody></table></div>`;
+}
+
+/* ============================================================
+   BLOQUE 3 · Vista SUBIR INFORMES (para Yumara)
+   ============================================================ */
+function vSubirInformes(){
+  $('main').innerHTML=`<div class="phead"><div><h2>Subir informes desde TRAZA·END</h2>
+    <div class="sub">Descarga en TRAZA·END el archivo <b>.trazaend</b> (como siempre) y súbelo aquí. Los PDF se quedan en END; aquí solo entran los datos para el control.</div></div></div>
+  <div class="drop" id="dropInf" onclick="document.getElementById('infInput').click()">${svg('up')}
+    <div style="font-size:14px;font-weight:600;margin:7px 0 3px">Arrastra el archivo .trazaend o pulsa para elegirlo</div>
+    <div class="hint">Es el archivo de copia que descargas en TRAZA·END. Súbelo cada día tras enviar los informes.</div></div>
+  <div class="alert i" style="margin-top:11px"><b>¿Cada cuánto?</b> Una vez al día, después de generar y enviar los informes en TRAZA·END.
+    Subirlo varias veces no crea duplicados: actualiza los que ya están y añade los nuevos.</div>
+  <div class="alert g" style="margin-top:8px">Tras subir, ve a <b>Control de informes</b> para ver qué falta por entregar y qué OT están vencidas (+48 h).</div>`;
+  const d=$('dropInf');
+  d.addEventListener('dragover',e=>{e.preventDefault();d.classList.add('over');});
+  d.addEventListener('dragleave',()=>d.classList.remove('over'));
+  d.addEventListener('drop',e=>{e.preventDefault();d.classList.remove('over');const f=e.dataTransfer.files[0];if(f)onTrazaend(f);});
+}
+
+function previewInformes(R){
+  const conFecha=R.out.filter(i=>i.fecha_inspeccion).length;
+  const enviados=R.out.filter(i=>i.enviado).length;
+  const de2026=R.out.filter(i=>i.fecha_inspeccion && i.fecha_inspeccion>='2026-01-01').length;
+  const de2025=R.out.filter(i=>i.fecha_inspeccion && i.fecha_inspeccion<'2026-01-01').length;
+  const ots=new Set(R.out.map(i=>String(i.ot).replace(/\D/g,'')).filter(Boolean)).size;
+  openModal(`<h3>Informes desde TRAZA·END · ${esc(R.file)}</h3><div class="mbody">
+    <div class="grid3">
+      <div class="kpi a"><div class="k">Informes en el archivo</div><div class="v">${R.out.length}</div><div class="s">${ots} OT distintas</div></div>
+      <div class="kpi g"><div class="k">Enviados al cliente</div><div class="v">${enviados}</div><div class="s">de ${R.out.length}</div></div>
+      <div class="kpi"><div class="k">De 2026</div><div class="v">${de2026}</div><div class="s">se cruzan con planificación</div></div>
+      <div class="kpi"><div class="k">De 2025</div><div class="v">${de2025}</div><div class="s">se guardan, no se cruzan</div></div>
+      <div class="kpi ${R.rech.length?'w':''}"><div class="k">Descartados</div><div class="v">${R.rech.length}</div><div class="s">sin nº de informe</div></div>
+      <div class="kpi ${R.out.length-conFecha?'w':'g'}"><div class="k">Sin fecha</div><div class="v">${R.out.length-conFecha}</div><div class="s">no entran en el semáforo</div></div>
+    </div>
+    <div class="alert i" style="margin-top:11px">Se guardan <b>solo los datos</b> del informe (OT, fecha, técnica, técnico, enviado).
+      Los <b>PDF permanecen en TRAZA·END</b>, no se duplican aquí. Al subir el archivo cada día,
+      los informes que ya existan <b>se actualizan</b> y los nuevos <b>se añaden</b>, sin duplicar.</div>
+    <div class="card"><div class="ch">Primeros 10 informes</div><table class="t"><thead><tr>
+      <th>Nº informe</th><th>OT</th><th>Fecha</th><th>Técnica</th><th>Inspector</th><th>Enviado</th></tr></thead><tbody>
+    ${R.out.slice(0,10).map(i=>`<tr><td class="mono">${esc(i.num_informe)}</td><td class="mono">${esc(i.ot)}</td>
+      <td class="mono">${esc(i.fecha_inspeccion||'—')}</td><td>${esc(i.tecnica)}</td>
+      <td class="dim">${esc(i.inspector.slice(0,24))}</td>
+      <td>${i.enviado?'<span class="badge b-ok">✓ Enviado</span>':'<span class="badge b-warn">Pendiente</span>'}</td></tr>`).join('')}
+    </tbody></table></div></div>
+    <div class="mfoot"><button class="btn" onclick="A.closeModal()">Cancelar</button>
+      <button class="btn pri" onclick="A.confirmarInformes()">Subir ${R.out.length} informe(s)</button></div>`);
+}
+async function confirmarInformes(){
+  const R=_prevInf; if(!R)return;
+  if(!puedoEditar()){ toast('Tu rol es de solo consulta.'); return; }
+  closeModal(); toast('Subiendo informes al servidor…');
+  try{
+    await DB.upsertInformes(R.out);
+    S.informes=await DB.loadInformes();
+    S.control=await DB.controlInformes();
+    view='control'; render();
+    toast('Subidos <b>'+R.out.length+'</b> informes. Ya se ve el control de entregas.');
+  }catch(e){ alert('Error al subir informes:\n\n'+errTxt(e)); }
+  _prevInf=null;
+}
+
 function vImportar(){
   $('main').innerHTML=`<div class="phead"><div><h2>Importar Excel</h2>
     <div class="sub">Sigue disponible mientras convivan los dos sistemas. Aplica automáticamente las reglas de conversión aprobadas.</div></div></div>
@@ -1199,19 +1484,20 @@ function normaliza(x){ const d={meta:{app:'TRAZA-OBRA',v:3,created:now()},cfg:{u
   o.filas=o.filas.map(f=>Object.assign(FILA0(),f)); return o; }
 /* ---------- Render ---------- */
 const NAV=[{sep:'Operación'},{id:'plan',t:'Planificación',ic:'cal'},{id:'tablero',t:'Tablero',ic:'grid'},{id:'tecnicos',t:'Carga por técnico',ic:'users'},
- {sep:'Control'},{id:'calidad',t:'Calidad del dato',ic:'warn'},
- {sep:'Sistema'},{id:'importar',t:'Importar Excel',ic:'up'},{id:'datos',t:'Sistema',ic:'db'}];
+ {sep:'Control'},{id:'control',t:'Control de informes',ic:'book'},{id:'calidad',t:'Calidad del dato',ic:'warn'},
+ {sep:'Sistema'},{id:'importar',t:'Importar Excel',ic:'up'},{id:'informes',t:'Subir informes (END)',ic:'up'},{id:'datos',t:'Sistema',ic:'db'}];
 function renderNav(){
   const prod=L().filter(l=>l.tipo==='PRODUCTIVO'); const inc=prod.filter(l=>!l.ots.length).length+S.rechazos.length;
   $('nav').innerHTML=NAV.map(n=>n.sep?`<div class="sep">${esc(n.sep)}</div>`
    :`<button class="${view===n.id?'on':''}" onclick="A.go('${n.id}')">${svg(n.ic)} ${esc(n.t)}
      ${n.id==='calidad'&&inc?`<span class="cnt bad">${inc}</span>`:''}
+     ${n.id==='control'&&nVencidos()?`<span class="cnt bad">${nVencidos()}</span>`:''}
      ${n.id==='plan'&&S.filas.length?`<span class="cnt">${S.filas.length}</span>`:''}</button>`).join('');
 }
 function render(){ renderNav();
   $('eurBtn').textContent=S.cfg.eur?'€ visibles':'€ ocultos'; $('eurBtn').className='btn'+(S.cfg.eur?' on':'');
   if(['tablero','tecnicos'].includes(view)) renderKPIs(); else $('kpis').innerHTML='';
-  ({plan:vPlan,tablero:vTablero,tecnicos:vTecnicos,calidad:vCalidad,importar:vImportar,datos:vDatos}[view]||vPlan)(); }
+  ({plan:vPlan,tablero:vTablero,tecnicos:vTecnicos,control:vControl,calidad:vCalidad,importar:vImportar,informes:vSubirInformes,datos:vDatos}[view]||vPlan)(); }
 function go(v){view=v;window.scrollTo(0,0);sel={r:0,c:0};render();}
 function tick(){$('clock').textContent=new Date().toLocaleString('es-ES',{weekday:'long',day:'2-digit',month:'long',hour:'2-digit',minute:'2-digit'});}
 /* ---------- API ---------- */
@@ -1240,6 +1526,9 @@ const A={go,render,closeModal,exportBackup,exportCSV,confirmarImport,undo,addFil
   config:()=>{ if(!confirm('Se olvidará la dirección del servidor en este equipo y tendrás que volver a introducirla. ¿Continuar?'))return;
     delCfg(); location.reload(); },
   recargar:async()=>{ await recargar(); render(); toast('Actualizado desde el servidor.'); },
+  confirmarInformes,
+  setFC:(k,v)=>{FC[k]=v;render();if(k==='ot'||k==='q'){const i=document.querySelector('.searchbar input.mono');if(i){i.focus();i.setSelectionRange(i.value.length,i.value.length);}}},
+  recargarControl:async()=>{ try{ S.informes=await DB.loadInformes(); S.control=await DB.controlInformes(); render(); toast('Control actualizado.'); }catch(e){ toast('No se pudo actualizar: '+esc(errTxt(e))); } },
   restaurar:async(dia,n)=>{
     if(!soyDelegado()){toast('Solo el delegado puede restaurar.');return;}
     if(!confirm('Restaurar la copia del '+fmtCorto(dia)+' ('+n+' filas).\n\nSe SUSTITUYE toda la planificación actual por esa foto.\n¿Continuar?'))return;
