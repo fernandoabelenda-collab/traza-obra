@@ -312,8 +312,17 @@ const DB={
     return out;
   },
   async controlInformes(){
-    const {data,error}=await SB.from('v_control_informes').select('*');
-    if(error) throw error; return data||[];
+    // La vista puede tener más de 1000 filas (Supabase corta a 1000 por defecto).
+    // Traemos por páginas hasta agotarla.
+    const PAG=1000; let desde=0, todo=[];
+    for(let i=0;i<200;i++){
+      const {data,error}=await SB.from('v_control_informes').select('*').range(desde,desde+PAG-1);
+      if(error) throw error;
+      const lote=data||[]; todo=todo.concat(lote);
+      if(lote.length<PAG) break;
+      desde+=PAG;
+    }
+    return todo;
   },
   async removeRango(d1,d2){ const {error}=await SB.from('planificacion').delete().gte('fecha',d1).lte('fecha',d2); if(error) throw error; },
   async removeTodo(){ const {error}=await SB.from('planificacion').delete().neq('id','00000000-0000-0000-0000-000000000000'); if(error) throw error; },
