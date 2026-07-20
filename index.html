@@ -1720,6 +1720,9 @@ async function entrarApp(){
   await cargaPerfiles();
   const ok=await recargar();
   if(!ok){ gmsg('No se pudo leer la planificación. Revisa la conexión.','err'); return; }
+  // Cargar los informes ya guardados en el servidor (subidos en sesiones anteriores)
+  try{ S.informes=await DB.loadInformes(); S.control=await DB.controlInformes(); }
+  catch(e){ S.informes=S.informes||[]; S.control=S.control||[]; }
   $('gate').style.display='none';
   $('app').style.display='flex';
   APP_LISTA=true;
