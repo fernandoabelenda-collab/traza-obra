@@ -311,6 +311,14 @@ const DB={
     }
     return out;
   },
+  async marcarSinInforme(ot){
+    const {error}=await SB.from('ot_sin_informe').insert({ot:String(ot)});
+    if(error) throw error;
+  },
+  async quitarSinInforme(ot){
+    const {error}=await SB.from('ot_sin_informe').delete().eq('ot',String(ot));
+    if(error) throw error;
+  },
   async controlInformes(){
     // La vista puede tener más de 1000 filas (Supabase corta a 1000 por defecto).
     // Traemos por páginas hasta agotarla.
@@ -1289,6 +1297,7 @@ function vControl(){
   const completos=activos.filter(c=>c.estado==='ENVIADO').length;
   const sinInf=activos.filter(c=>c.estado==='SIN_INFORME').length;
   const sinEnviar=activos.filter(c=>c.estado==='SIN_ENVIAR').length;
+  const cerrados=activos.filter(c=>c.estado==='CERRADO_SIN_INFORME').length;
   const vencidos=activos.filter(c=>c.vencido).length;
   // filtros
   const clientes=[...new Set(ctrl.map(c=>c.cliente).filter(Boolean))].sort();
@@ -1301,6 +1310,7 @@ function vControl(){
   else if(FC.estado==='hist') lista=lista.filter(c=>c.historico);
   else if(FC.estado==='sin') lista=lista.filter(c=>c.estado==='SIN_INFORME');
   else if(FC.estado==='sinenviar') lista=lista.filter(c=>c.estado==='SIN_ENVIAR');
+  else if(FC.estado==='cerrado') lista=lista.filter(c=>c.estado==='CERRADO_SIN_INFORME');
   else if(FC.estado==='completo') lista=lista.filter(c=>c.estado==='ENVIADO');
   if(FC.cliente) lista=lista.filter(c=>c.cliente===FC.cliente);
   if(FC.tecnico) lista=lista.filter(c=>c.tecnico===FC.tecnico);
@@ -1325,6 +1335,7 @@ function vControl(){
     <button class="btn sm ${FC.estado==='vencidos'?'on':''}" onclick="A.setFC('estado','vencidos')">🔴 Vencidos</button>
     <button class="btn sm ${FC.estado==='sin'?'on':''}" onclick="A.setFC('estado','sin')">Sin informe</button>
     <button class="btn sm ${FC.estado==='sinenviar'?'on':''}" onclick="A.setFC('estado','sinenviar')">🟠 Sin enviar</button>
+    <button class="btn sm ${FC.estado==='cerrado'?'on':''}" onclick="A.setFC('estado','cerrado')">🔵 Sin informe (interno)</button>
     <button class="btn sm ${FC.estado==='completo'?'on':''}" onclick="A.setFC('estado','completo')">🟢 Completos</button>
     <button class="btn sm ${FC.verHist?'on':''}" onclick="A.toggleHist()">${FC.verHist?'Ocultar':'Ver'} histórico</button>
     <select onchange="A.setFC('tecnico',this.value)"><option value="">Todos los técnicos</option>${fmt(tecnicos,FC.tecnico)}</select>
@@ -1337,13 +1348,16 @@ function vControl(){
     <th>Acción</th><th>Envío</th></tr></thead><tbody>
   ${lista.length?lista.map(c=>{
     let badge, accion;
+    const puedeMarcar = soyDelegado() || (YO.rol==='coordinacion');
     if(c.historico){ badge='<span class="badge b-ok">🟢 Enviado</span> <span class="dim" style="font-size:10px">(histórico)</span>';
       accion='<span class="dim">Cerrado — anterior al 8 jul</span>'; }
     else if(c.estado==='ENVIADO'){ badge='<span class="badge b-ok">🟢 Enviado</span>'; accion='<span class="dim">—</span>'; }
     else if(c.estado==='SIN_ENVIAR'){ badge='<span class="badge b-warn">🟠 Sin enviar</span>';
       accion='<b style="color:var(--warn)">Avisar a Yumara</b> <span class="dim">(informe hecho, falta enviar)</span>'; }
+    else if(c.estado==='CERRADO_SIN_INFORME'){ badge='<span class="badge" style="background:#E7F0FB;color:#1F4E89;border:1px solid #BBD3EE">🔵 Cerrado (sin informe)</span>';
+      accion=puedeMarcar?`<button class="btn sm" onclick="A.quitarSinInforme('${esc(c.ot)}')">Quitar marca</button> <span class="dim">interno del cliente</span>`:'<span class="dim">interno del cliente</span>'; }
     else { badge='<span class="badge b-bad">🔴 Sin informe</span>';
-      accion='<b style="color:var(--bad)">Llamar al técnico</b>'; }
+      accion=`<b style="color:var(--bad)">Llamar al técnico</b>${puedeMarcar?` · <button class="btn sm" onclick="A.marcarSinInforme('${esc(c.ot)}')">Sin informe (interno)</button>`:''}`; }
     const venc=c.vencido?' <span class="badge b-bad" title="Más de 48 h desde el trabajo">+48h</span>':'';
     return `<tr${c.vencido?' style="background:#FEF6F5"':''}>
       <td>${badge}${venc}</td>
@@ -1553,6 +1567,18 @@ const A={go,render,closeModal,exportBackup,exportCSV,confirmarImport,undo,addFil
   toggleHist:()=>{FC.verHist=!FC.verHist;render();},
   setFC:(k,v)=>{FC[k]=v;render();if(k==='ot'||k==='q'){const i=document.querySelector('.searchbar input.mono');if(i){i.focus();i.setSelectionRange(i.value.length,i.value.length);}}},
   recargarControl:async()=>{ try{ S.informes=await DB.loadInformes(); S.control=await DB.controlInformes(); render(); toast('Control actualizado.'); }catch(e){ toast('No se pudo actualizar: '+esc(errTxt(e))); } },
+  marcarSinInforme:async(ot)=>{
+    if(!(soyDelegado()||YO.rol==='coordinacion')){toast('No tienes permiso.');return;}
+    if(!confirm('Marcar la OT '+ot+' como "Cerrado (sin informe)".\n\nTodas las líneas de esta OT quedarán cerradas en azul (trabajo interno del cliente, no lleva informe por oficina).\n\n¿Continuar?'))return;
+    try{ await DB.marcarSinInforme(ot); S.control=await DB.controlInformes(); render(); toast('OT '+ot+' marcada como cerrada (sin informe).'); }
+    catch(e){ toast('No se pudo marcar: '+esc(errTxt(e))); }
+  },
+  quitarSinInforme:async(ot)=>{
+    if(!(soyDelegado()||YO.rol==='coordinacion')){toast('No tienes permiso.');return;}
+    if(!confirm('Quitar la marca "sin informe" de la OT '+ot+'.\n\nVolverá al control normal (se pedirá su informe).\n\n¿Continuar?'))return;
+    try{ await DB.quitarSinInforme(ot); S.control=await DB.controlInformes(); render(); toast('Marca quitada de la OT '+ot+'.'); }
+    catch(e){ toast('No se pudo quitar: '+esc(errTxt(e))); }
+  },
   restaurar:async(dia,n)=>{
     if(!soyDelegado()){toast('Solo el delegado puede restaurar.');return;}
     if(!confirm('Restaurar la copia del '+fmtCorto(dia)+' ('+n+' filas).\n\nSe SUSTITUYE toda la planificación actual por esa foto.\n¿Continuar?'))return;
