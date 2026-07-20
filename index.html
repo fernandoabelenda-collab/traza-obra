@@ -1275,16 +1275,21 @@ function vControl(){
   }
   // KPIs
   const total=ctrl.length;
-  const completos=ctrl.filter(c=>c.estado==='ENVIADO').length;
-  const sinInf=ctrl.filter(c=>c.estado==='SIN_INFORME').length;
-  const sinEnviar=ctrl.filter(c=>c.estado==='SIN_ENVIAR').length;
-  const vencidos=ctrl.filter(c=>c.vencido).length;
+  const activos=ctrl.filter(c=>!c.historico);
+  const histor=ctrl.filter(c=>c.historico).length;
+  const completos=activos.filter(c=>c.estado==='ENVIADO').length;
+  const sinInf=activos.filter(c=>c.estado==='SIN_INFORME').length;
+  const sinEnviar=activos.filter(c=>c.estado==='SIN_ENVIAR').length;
+  const vencidos=activos.filter(c=>c.vencido).length;
   // filtros
   const clientes=[...new Set(ctrl.map(c=>c.cliente).filter(Boolean))].sort();
   const tecnicos=[...new Set(ctrl.map(c=>c.tecnico).filter(Boolean))].sort();
   const fmt=(a,s)=>a.map(x=>`<option value="${esc(x)}" ${s===x?'selected':''}>${esc(x)}</option>`).join('');
   let lista=ctrl.slice();
+  // por defecto, ocultar el histórico salvo que se pida verlo
+  if(!FC.verHist) lista=lista.filter(c=>!c.historico);
   if(FC.estado==='vencidos') lista=lista.filter(c=>c.vencido);
+  else if(FC.estado==='hist') lista=lista.filter(c=>c.historico);
   else if(FC.estado==='sin') lista=lista.filter(c=>c.estado==='SIN_INFORME');
   else if(FC.estado==='sinenviar') lista=lista.filter(c=>c.estado==='SIN_ENVIAR');
   else if(FC.estado==='completo') lista=lista.filter(c=>c.estado==='ENVIADO');
@@ -1304,7 +1309,7 @@ function vControl(){
     <div class="kpi ${sinInf?'b':''}"><div class="k">Sin informe</div><div class="v">${sinInf}</div><div class="s">llamar al técnico</div></div>
     <div class="kpi ${sinEnviar?'w':''}"><div class="k">Sin enviar</div><div class="v">${sinEnviar}</div><div class="s">avisar a Yumara</div></div>
     <div class="kpi g"><div class="k">Completos</div><div class="v">${completos}</div><div class="s">enviados al cliente</div></div>
-    <div class="kpi a"><div class="k">Trabajos</div><div class="v">${total}</div><div class="s">técnico·día·OT</div></div>
+    <div class="kpi a"><div class="k">Histórico</div><div class="v">${histor}</div><div class="s">cerrado (≤7 jul)</div></div>
   </div>
   <div class="searchbar">
     <button class="btn sm ${FC.estado===''?'on':''}" onclick="A.setFC('estado','')">Todos</button>
@@ -1312,6 +1317,7 @@ function vControl(){
     <button class="btn sm ${FC.estado==='sin'?'on':''}" onclick="A.setFC('estado','sin')">Sin informe</button>
     <button class="btn sm ${FC.estado==='sinenviar'?'on':''}" onclick="A.setFC('estado','sinenviar')">🟠 Sin enviar</button>
     <button class="btn sm ${FC.estado==='completo'?'on':''}" onclick="A.setFC('estado','completo')">🟢 Completos</button>
+    <button class="btn sm ${FC.verHist?'on':''}" onclick="A.toggleHist()">${FC.verHist?'Ocultar':'Ver'} histórico</button>
     <select onchange="A.setFC('tecnico',this.value)"><option value="">Todos los técnicos</option>${fmt(tecnicos,FC.tecnico)}</select>
     <select onchange="A.setFC('cliente',this.value)"><option value="">Todos los clientes</option>${fmt(clientes,FC.cliente)}</select>
     <input class="mono" style="width:100px" placeholder="OT…" value="${esc(FC.ot)}" oninput="A.setFC('ot',this.value)">
@@ -1322,7 +1328,9 @@ function vControl(){
     <th>Acción</th><th>Envío</th></tr></thead><tbody>
   ${lista.length?lista.map(c=>{
     let badge, accion;
-    if(c.estado==='ENVIADO'){ badge='<span class="badge b-ok">🟢 Enviado</span>'; accion='<span class="dim">—</span>'; }
+    if(c.historico){ badge='<span class="badge b-ok">🟢 Enviado</span> <span class="dim" style="font-size:10px">(histórico)</span>';
+      accion='<span class="dim">Cerrado — anterior al 8 jul</span>'; }
+    else if(c.estado==='ENVIADO'){ badge='<span class="badge b-ok">🟢 Enviado</span>'; accion='<span class="dim">—</span>'; }
     else if(c.estado==='SIN_ENVIAR'){ badge='<span class="badge b-warn">🟠 Sin enviar</span>';
       accion='<b style="color:var(--warn)">Avisar a Yumara</b> <span class="dim">(informe hecho, falta enviar)</span>'; }
     else { badge='<span class="badge b-bad">🔴 Sin informe</span>';
@@ -1533,6 +1541,7 @@ const A={go,render,closeModal,exportBackup,exportCSV,confirmarImport,undo,addFil
     delCfg(); location.reload(); },
   recargar:async()=>{ await recargar(); render(); toast('Actualizado desde el servidor.'); },
   confirmarInformes,
+  toggleHist:()=>{FC.verHist=!FC.verHist;render();},
   setFC:(k,v)=>{FC[k]=v;render();if(k==='ot'||k==='q'){const i=document.querySelector('.searchbar input.mono');if(i){i.focus();i.setSelectionRange(i.value.length,i.value.length);}}},
   recargarControl:async()=>{ try{ S.informes=await DB.loadInformes(); S.control=await DB.controlInformes(); render(); toast('Control actualizado.'); }catch(e){ toast('No se pudo actualizar: '+esc(errTxt(e))); } },
   restaurar:async(dia,n)=>{
