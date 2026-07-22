@@ -2273,3 +2273,69 @@ A.quitarLineaSinInforme = async (ot,tecnico,fecha)=>{
 
 })();
 </script>
+<script>
+/* ============================================================
+   BLOQUE · Ausencias agrupadas por rango en "Carga por técnico"
+   100% ADITIVO — solo cambia la columna "No productivo".
+   ============================================================ */
+(function(){
+if(typeof S==='undefined'||!S){ setTimeout(arguments.callee,400); return; }
+if(window.__ausRangoListo) return; window.__ausRangoListo=true;
+
+function _diaSemana(iso){ return new Date(iso+'T12:00:00').getDay(); } // 0=Dom .. 6=Sáb
+function _continuaBloque(prev,cur){
+  // cur sigue el bloque si entre prev y cur solo hay días de fin de semana
+  let d=addDays(prev,1), pasos=0;
+  while(d<cur && pasos<8){ const dw=_diaSemana(d); if(dw!==0 && dw!==6) return false; d=addDays(d,1); pasos++; }
+  return d===cur;
+}
+function _dm(iso){ const d=new Date(iso+'T12:00:00');
+  return String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0'); }
+function rangoAusTxt(ini,fin){
+  if(ini===fin) return _dm(ini);
+  const a=new Date(ini+'T12:00:00'), b=new Date(fin+'T12:00:00');
+  if(a.getMonth()===b.getMonth() && a.getFullYear()===b.getFullYear())
+    return String(a.getDate()).padStart(2,'0')+'–'+_dm(fin);   // 17–21/07
+  return _dm(ini)+'–'+_dm(fin);                                 // 28/07–02/08
+}
+function agrupaAusencias(aus){
+  const porTipo={};
+  (aus||[]).forEach(a=>{ const t=a.tipo||'—'; (porTipo[t]=porTipo[t]||new Set()).add(a.fecha); });
+  const bloques=[];
+  Object.keys(porTipo).forEach(tipo=>{
+    const dias=[...porTipo[tipo]].filter(Boolean).sort();
+    let ini=null, fin=null;
+    dias.forEach(d=>{
+      if(ini===null){ ini=fin=d; }
+      else if(_continuaBloque(fin,d)){ fin=d; }
+      else { bloques.push({tipo,ini,fin}); ini=fin=d; }
+    });
+    if(ini!==null) bloques.push({tipo,ini,fin});
+  });
+  bloques.sort((a,b)=>a.ini.localeCompare(b.ini));
+  return bloques;
+}
+
+/* Redefinir vTecnicos: idéntica, salvo la columna "No productivo" (rangos) */
+vTecnicos = function(){
+  const arr=filtra(enAmbito());
+  const rows=uniqL(arr,l=>l.tecnico).map(t=>{
+    const m=arr.filter(l=>l.tecnico===t), p=m.filter(l=>l.tipo==='PRODUCTIVO');
+    return {t,m,h:p.reduce((s,l)=>s+(l.horas||0),0),cl:[...new Set(p.map(l=>l.cliente).filter(Boolean))],
+      au:m.filter(l=>l.tipo!=='PRODUCTIVO')};
+  }).sort((a,b)=>b.h-a.h);
+  const mx=Math.max(1,...rows.map(r=>r.h));
+  $('main').innerHTML=`<div class="phead"><div><h2>Carga por técnico</h2>
+    <div class="sub">Horas imputadas y reparto de clientes. Las ausencias se agrupan por rango de fechas.</div></div></div>${barraFecha()}${barraFiltros()}
+  <div class="card"><table class="t"><thead><tr><th>Técnico</th><th style="width:160px">Horas</th><th class="tar">Líneas</th><th>Clientes</th><th>No productivo</th></tr></thead><tbody>
+  ${rows.length?rows.map(r=>`<tr><td><b>${esc(r.t)}</b></td>
+    <td><div style="display:flex;align-items:center;gap:6px"><div class="bar" style="flex:1"><i style="width:${(r.h/mx*100).toFixed(0)}%"></i></div><span class="mono" style="width:38px;text-align:right">${nf(r.h,1)}</span></div></td>
+    <td class="tar mono">${r.m.length}</td>
+    <td>${r.cl.map(c=>`<span style="border-left:3px solid ${colorCli(c)};padding-left:5px;margin-right:7px;font-size:11.5px">${esc(c)}</span>`).join('')||'<span class="dim">—</span>'}
+      ${r.cl.length>1?'<span class="badge b-warn">jornada partida</span>':''}</td>
+    <td>${(()=>{const bl=agrupaAusencias(r.au);return bl.length?bl.map(b=>`<span class="badge b-gray" style="margin-right:4px">${esc(b.tipo)} ${esc(rangoAusTxt(b.ini,b.fin))}</span>`).join(''):'—';})()}</td></tr>`).join('')
+   :'<tr><td colspan="5"><div class="empty">Sin datos.</div></td></tr>'}</tbody></table></div>`;
+};
+
+})();
+</script>
