@@ -1809,3 +1809,205 @@ A.config=()=>{ if(!confirm('Se olvidará la dirección del servidor en este equi
 </script>
 </body>
 </html>
+<script>
+/* ============================================================
+   BLOQUE CALENDARIO · Notas generales con recordatorio
+   100% ADITIVO — script propio, se pega al final del archivo.
+   ============================================================ */
+(function(){
+if(typeof S==='undefined'||!S){ setTimeout(arguments.callee,400); return; }
+if(window.__calListo) return; window.__calListo=true;
+
+if(!S.notas) S.notas=[];
+let calYM = todayISO().slice(0,7);
+let _avisoHecho = false;
+
+const NOTAS = {
+  async load(){
+    const {data,error}=await SB.from('notas')
+      .select('id,fecha,texto,recordatorio,autor,creado_en')
+      .order('fecha',{ascending:true}).order('creado_en',{ascending:true});
+    if(error) throw error; return data||[];
+  },
+  async insert(n){
+    const {data,error}=await SB.from('notas')
+      .insert({fecha:n.fecha,texto:n.texto,recordatorio:!!n.recordatorio,autor:n.autor||null})
+      .select('id,fecha,texto,recordatorio,autor,creado_en').single();
+    if(error) throw error; return data;
+  },
+  async update(id,patch){
+    const {data,error}=await SB.from('notas').update(patch).eq('id',id)
+      .select('id,fecha,texto,recordatorio,autor,creado_en').single();
+    if(error) throw error; return data;
+  },
+  async remove(id){ const {error}=await SB.from('notas').delete().eq('id',id); if(error) throw error; }
+};
+
+function calAdd(ym,delta){ const [y,m]=ym.split('-').map(Number); const d=new Date(y,m-1+delta,1);
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'); }
+function calNombreMes(ym){ const [y,m]=ym.split('-').map(Number);
+  return new Date(y,m-1,1).toLocaleDateString('es-ES',{month:'long',year:'numeric'}); }
+function calCeldas(ym){
+  const [y,m]=ym.split('-').map(Number);
+  const primer=new Date(y,m-1,1); const desplaz=(primer.getDay()+6)%7;
+  const ini=new Date(y,m-1,1-desplaz); const out=[];
+  for(let i=0;i<42;i++){ const d=new Date(ini.getFullYear(),ini.getMonth(),ini.getDate()+i);
+    const iso=new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,10);
+    out.push({iso,dia:d.getDate(),inMes:(d.getMonth()===m-1)}); }
+  return out;
+}
+function _calCSS(){
+  if(document.getElementById('calcss')) return;
+  const st=document.createElement('style'); st.id='calcss';
+  st.textContent=`
+  .cahead{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin-bottom:4px}
+  .cahead>div{text-align:center;font-size:10px;font-weight:700;color:var(--dim);text-transform:uppercase}
+  .cagrid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px}
+  .cacell{min-height:66px;border:1px solid var(--line);border-radius:8px;padding:5px 6px;cursor:pointer;position:relative;background:#fff}
+  .cacell:hover{background:#F2F7FD;border-color:var(--pri2)}
+  .cacell.out{background:#FAFBFD}.cacell.out .cadia{color:#B9C4D2}
+  .cacell.hoy{border:2px solid var(--pri);background:#EEF5FC}
+  .cadia{font-size:12.5px;font-weight:600}
+  .cacount{position:absolute;bottom:5px;right:5px;background:var(--pri);color:#fff;border-radius:10px;font-size:10px;padding:1px 7px;font-weight:600;white-space:nowrap}
+  .cacount.rem{background:var(--warn)}
+  .canota{border:1px solid var(--line);border-radius:8px;padding:8px 10px;margin-bottom:8px;background:#fff}
+  .canota textarea{width:100%;min-height:60px;border:1px solid var(--line);border-radius:8px;padding:6px 8px;font:inherit;resize:vertical}
+  @media(max-width:640px){.cacell{min-height:52px}}`;
+  document.head.appendChild(st);
+}
+function vCalendario(){
+  _calCSS();
+  const ym=calYM, hoy=todayISO();
+  const celdas=calCeldas(ym);
+  const byDay={}; (S.notas||[]).forEach(n=>{ (byDay[n.fecha]=byDay[n.fecha]||[]).push(n); });
+  const dow=['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'];
+  const prox=(S.notas||[]).filter(n=>n.recordatorio && n.fecha>=hoy)
+    .sort((a,b)=>a.fecha.localeCompare(b.fecha)).slice(0,8);
+  const gridHTML=celdas.map(c=>{
+    const arr=byDay[c.iso]||[]; const rem=arr.some(n=>n.recordatorio);
+    const cls=['cacell',c.inMes?'':'out',c.iso===hoy?'hoy':''].filter(Boolean).join(' ');
+    const marca=arr.length?`<span class="cacount ${rem?'rem':''}">${rem?'🔔':''}${arr.length}</span>`:'';
+    return `<div class="${cls}" onclick="A.abrirDia('${c.iso}')"><span class="cadia">${c.dia}</span>${marca}</div>`;
+  }).join('');
+  $('main').innerHTML=`
+  <div class="phead"><div><h2>Calendario de notas</h2>
+    <div class="sub">Notas generales de la delegación. Marca <b>🔔 recordatorio</b> y saltará un aviso el día indicado al abrir la app. Las ven el delegado y las coordinadoras.</div></div>
+    <div class="actions"><button class="btn" onclick="A.recargarNotas()">Actualizar</button></div></div>
+  <div class="daybar">
+    <button class="btn sm" onclick="A.calMes(-1)">${svg('prev')}</button>
+    <button class="btn sm" onclick="A.calHoy()">Hoy</button>
+    <button class="btn sm" onclick="A.calMes(1)">${svg('next')}</button>
+    <div class="dlabel">${esc(calNombreMes(ym))}</div>
+    ${puedoEditar()?'':'<span class="dim" style="margin-left:8px">Solo consulta</span>'}</div>
+  <div class="card"><div class="cb" style="padding:10px">
+    <div class="cahead">${dow.map(d=>`<div>${d}</div>`).join('')}</div>
+    <div class="cagrid">${gridHTML}</div></div></div>
+  ${prox.length?`<div class="card"><div class="ch">🔔 Próximos recordatorios</div>
+    <table class="t"><thead><tr><th>Día</th><th>Nota</th><th>Autor</th><th></th></tr></thead><tbody>
+    ${prox.map(n=>`<tr><td class="mono">${esc(fmtCorto(n.fecha))}${n.fecha===hoy?' <span class="badge b-warn">hoy</span>':''}</td>
+      <td>${esc(n.texto.slice(0,80))}${n.texto.length>80?'…':''}</td>
+      <td class="dim">${esc(n.autor||'—')}</td>
+      <td class="tar"><button class="btn sm" onclick="A.abrirDia('${n.fecha}')">Abrir</button></td></tr>`).join('')}
+    </tbody></table></div>`:''}`;
+}
+function abrirDia(iso,editId){
+  const notas=(S.notas||[]).filter(n=>n.fecha===iso)
+    .sort((a,b)=>String(a.creado_en).localeCompare(String(b.creado_en)));
+  const puede=puedoEditar();
+  const filas=notas.map(n=>{
+    if(editId && String(n.id)===String(editId)){
+      return `<div class="canota">
+        <textarea id="ednota_txt">${esc(n.texto)}</textarea>
+        <label style="display:flex;gap:6px;align-items:center;margin:8px 0;font-size:12px">
+          <input type="checkbox" id="ednota_rec" ${n.recordatorio?'checked':''}> Avisar el ${esc(fmtCorto(iso))} (recordatorio)</label>
+        <button class="btn pri sm" onclick="A.guardarEdicionNota('${n.id}','${iso}')">Guardar</button>
+        <button class="btn sm" onclick="A.abrirDia('${iso}')">Cancelar</button></div>`;
+    }
+    return `<div class="canota">
+      <div>${n.recordatorio?'<span class="badge b-warn">🔔 recordatorio</span> ':''}${esc(n.texto).replace(/\n/g,'<br>')}</div>
+      <div class="dim" style="font-size:10.5px;margin-top:4px">${esc(n.autor||'—')} · ${esc(fmtCorto((n.creado_en||'').slice(0,10)))}</div>
+      ${puede?`<div style="margin-top:6px"><button class="btn sm" onclick="A.abrirDia('${iso}','${n.id}')">Editar</button>
+        <button class="btn sm dang" onclick="A.borrarNota('${n.id}','${iso}')">Borrar</button></div>`:''}</div>`;
+  }).join('') || '<div class="dim" style="padding:8px 0">Sin notas este día.</div>';
+  const alta=puede?`<div class="card" style="margin-top:8px"><div class="ch">Nueva nota</div><div class="cb">
+    <textarea id="nota_txt" placeholder="Escribe la nota…" style="width:100%;min-height:64px;border:1px solid var(--line);border-radius:8px;padding:6px 8px;font:inherit;resize:vertical"></textarea>
+    <label style="display:flex;gap:6px;align-items:center;margin-top:8px;font-size:12px">
+      <input type="checkbox" id="nota_rec"> Avisar el ${esc(fmtCorto(iso))} (recordatorio)</label>
+    <div style="margin-top:8px"><button class="btn pri" onclick="A.guardarNota('${iso}')">Guardar nota</button></div></div></div>`:'';
+  openModal(`<h3>Notas · ${esc(fmtDia(iso))}</h3>
+    <div class="mbody">${filas}${alta}</div>
+    <div class="mfoot"><button class="btn" onclick="A.closeModal()">Cerrar</button></div>`);
+}
+function avisoRecordatorios(){
+  try{
+    if(_avisoHecho) return;
+    const hoy=todayISO();
+    const rem=(S.notas||[]).filter(n=>n.recordatorio && n.fecha===hoy);
+    if(!rem.length) return;
+    _avisoHecho=true;
+    const items=rem.map(n=>`<div class="canota"><div>${esc(n.texto).replace(/\n/g,'<br>')}</div>
+      <div class="dim" style="font-size:10.5px;margin-top:4px">${esc(n.autor||'—')}</div></div>`).join('');
+    openModal(`<h3>🔔 Recordatorio para hoy · ${esc(fmtCorto(hoy))}</h3>
+      <div class="mbody"><div class="alert w">Tienes <b>${rem.length}</b> recordatorio(s) para hoy.</div>${items}</div>
+      <div class="mfoot"><button class="btn" onclick="A.closeModal()">Entendido</button>
+        <button class="btn pri" onclick="A.closeModal();A.go('calendario')">Ver en el calendario</button></div>`);
+  }catch(e){}
+}
+A.calMes=(d)=>{ calYM=calAdd(calYM,d); render(); };
+A.calHoy=()=>{ calYM=todayISO().slice(0,7); render(); };
+A.abrirDia=(iso,editId)=>abrirDia(iso,editId);
+A.recargarNotas=async()=>{ try{ S.notas=await NOTAS.load(); if(view==='calendario') render(); toast('Notas actualizadas.'); }
+  catch(e){ toast('No se pudo actualizar: '+esc(errTxt(e))); } };
+A.guardarNota=async(iso)=>{
+  if(!puedoEditar()){ toast('Tu rol es de solo consulta.'); return; }
+  const txt=($('nota_txt')?$('nota_txt').value:'').trim();
+  const rec=$('nota_rec')?$('nota_rec').checked:false;
+  if(!txt){ toast('Escribe algo en la nota.'); return; }
+  try{ const n=await NOTAS.insert({fecha:iso,texto:txt,recordatorio:rec,autor:YO.nombre});
+    S.notas.push(n); if(view==='calendario') render(); abrirDia(iso); toast('Nota guardada.'); }
+  catch(e){ toast('No se pudo guardar: '+esc(errTxt(e))); }
+};
+A.guardarEdicionNota=async(id,iso)=>{
+  if(!puedoEditar()){ toast('Tu rol es de solo consulta.'); return; }
+  const txt=($('ednota_txt')?$('ednota_txt').value:'').trim();
+  const rec=$('ednota_rec')?$('ednota_rec').checked:false;
+  if(!txt){ toast('La nota no puede quedar vacía.'); return; }
+  try{ const n=await NOTAS.update(id,{texto:txt,recordatorio:rec});
+    const i=S.notas.findIndex(x=>String(x.id)===String(id)); if(i>=0) S.notas[i]=n;
+    if(view==='calendario') render(); abrirDia(iso); toast('Nota actualizada.'); }
+  catch(e){ toast('No se pudo actualizar: '+esc(errTxt(e))); }
+};
+A.borrarNota=async(id,iso)=>{
+  if(!puedoEditar()){ toast('Tu rol es de solo consulta.'); return; }
+  if(!confirm('¿Borrar esta nota?')) return;
+  try{ await NOTAS.remove(id); S.notas=S.notas.filter(x=>String(x.id)!==String(id));
+    if(view==='calendario') render(); abrirDia(iso); toast('Nota borrada.'); }
+  catch(e){ toast('No se pudo borrar: '+esc(errTxt(e))); }
+};
+
+/* Añadir "Calendario" al menú, justo antes de la sección Control */
+(function(){ const i=NAV.findIndex(n=>n.sep==='Control');
+  const item={id:'calendario',t:'Calendario',ic:'cal'};
+  if(!NAV.some(n=>n.id==='calendario')){ if(i>=0) NAV.splice(i,0,item); else NAV.push(item); } })();
+
+/* Extender render() para dibujar el calendario, sin tocar el original */
+const _render_prev=render;
+render=function(){
+  if(view==='calendario'){ renderNav(); if($('kpis'))$('kpis').innerHTML=''; vCalendario(); return; }
+  return _render_prev.apply(this,arguments);
+};
+A.render=render;
+
+/* Cargar notas y avisar de recordatorios de hoy */
+(async function(){
+  try{
+    for(let i=0;i<40 && !APP_LISTA;i++) await new Promise(r=>setTimeout(r,400));
+    if(!APP_LISTA || !YO.rol) return;
+    try{ S.notas=await NOTAS.load(); }catch(e){ S.notas=S.notas||[]; }
+    if(view==='calendario') render();
+    avisoRecordatorios();
+  }catch(e){}
+})();
+
+})();
+</script>
