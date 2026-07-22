@@ -2339,3 +2339,94 @@ vTecnicos = function(){
 
 })();
 </script>
+<script>
+/* ============================================================
+   BLOQUE · Horas fuera de jornada (>8h L-V) por técnico y día
+   100% ADITIVO — solo lectura, sin tocar nada. Sin Supabase.
+   ============================================================ */
+(function(){
+if(typeof S==='undefined'||!S){ setTimeout(arguments.callee,400); return; }
+if(window.__horasFueraListo) return; window.__horasFueraListo=true;
+
+/* icono 'clock' para el menú, encadenado sin tocar el svg original */
+const _svg_prev = svg;
+svg = function(n){
+  if(n==='clock') return '<svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>';
+  return _svg_prev(n);
+};
+
+function vHorasFuera(){
+  const lineas = filtra(enAmbito());
+  const acc={};
+  lineas.forEach(l=>{
+    if(l.horas==null || !l.tecnico) return;                       // sin horas o sin técnico
+    if(['VACACIONES','BAJA','FESTIVO'].includes(l.tipo)) return;  // ausencias fuera
+    const k=l.tecnico+'|'+l.fecha;
+    const o=acc[k]||(acc[k]={tecnico:l.tecnico,fecha:l.fecha,horas:0,horarios:[]});
+    o.horas+=l.horas;
+    if(l.horario) o.horarios.push(l.horario);
+  });
+  const dias=[];
+  Object.values(acc).forEach(o=>{
+    const dw=new Date(o.fecha+'T12:00:00').getDay();   // 0=Dom .. 6=Sáb
+    if(dw===0||dw===6) return;                          // solo L-V
+    const exceso=Math.round((o.horas-8)*100)/100;
+    if(exceso>0) dias.push(Object.assign(o,{exceso}));
+  });
+  const porTec={};
+  dias.forEach(d=>{ const o=porTec[d.tecnico]||(porTec[d.tecnico]={tecnico:d.tecnico,dias:0,horas:0});
+    o.dias++; o.horas+=d.exceso; });
+  const resumen=Object.values(porTec).sort((a,b)=>b.horas-a.horas);
+  const totalExceso=dias.reduce((t,d)=>t+d.exceso,0);
+  const maxDia=dias.reduce((m,d)=> d.exceso>(m?m.exceso:0)?d:m, null);
+  dias.sort((a,b)=> b.fecha.localeCompare(a.fecha) || b.exceso-a.exceso);
+
+  $('main').innerHTML=`
+  <div class="phead"><div><h2>Horas fuera de jornada</h2>
+    <div class="sub">Horas diarias que superan las <b>8 h</b> en días laborables (lunes a viernes), por técnico y por día. Para un periodo, pulsa <b>Ver rango → Mes</b>.</div></div></div>
+  ${barraFecha()}${barraFiltros()}
+  <div class="kpis" style="padding:0 0 11px">
+    <div class="kpi ${totalExceso>0?'w':'g'}"><div class="k">Total horas extra</div><div class="v">${nf(totalExceso,1)}</div><div class="s">sobre 8 h/día (L-V)</div></div>
+    <div class="kpi a"><div class="k">Técnicos afectados</div><div class="v">${resumen.length}</div><div class="s">con exceso en el periodo</div></div>
+    <div class="kpi"><div class="k">Días con exceso</div><div class="v">${dias.length}</div><div class="s">${maxDia?('máx. '+nf(maxDia.exceso,1)+' h · '+esc(maxDia.tecnico)):'—'}</div></div>
+  </div>
+  ${resumen.length?`<div class="card"><div class="ch">${svg('clock')} Resumen por técnico</div>
+    <table class="t"><thead><tr><th>Técnico</th><th class="tar">Días con exceso</th><th class="tar">Horas extra</th></tr></thead><tbody>
+    ${resumen.map(r=>`<tr><td><b>${esc(r.tecnico)}</b></td><td class="tar mono">${r.dias}</td>
+      <td class="tar mono" style="color:var(--warn);font-weight:700">+${nf(r.horas,1)}</td></tr>`).join('')}
+    <tr style="background:#F7F9FC;font-weight:700"><td>TOTAL</td><td class="tar mono">${dias.length}</td><td class="tar mono">+${nf(totalExceso,1)}</td></tr>
+    </tbody></table></div>
+  <div class="card"><div class="ch">Detalle por día</div>
+    <table class="t"><thead><tr><th>Fecha</th><th>Técnico</th><th class="tar">Horas del día</th><th class="tar">Exceso</th><th>Horario(s)</th></tr></thead><tbody>
+    ${dias.map(d=>`<tr><td class="mono">${esc(fmtCorto(d.fecha))}</td><td><b>${esc(d.tecnico)}</b></td>
+      <td class="tar mono">${nf(d.horas,1)}</td>
+      <td class="tar mono" style="color:var(--bad);font-weight:700">+${nf(d.exceso,1)}</td>
+      <td class="mono dim" style="font-size:11px">${esc(d.horarios.join(' + ')||'—')}</td></tr>`).join('')}
+    </tbody></table></div>`
+   :`<div class="card"><div class="empty">Sin horas fuera de jornada en este periodo (nadie supera 8 h/día de lunes a viernes).</div></div>`}
+  <div class="hint" style="margin-top:8px">Se suman todas las horas con horario del día (excepto ausencias). Sábados y domingos no se incluyen. Los festivos oficiales no se descuentan automáticamente.</div>`;
+}
+
+/* extender render() sin tocar el original */
+const _render_prev=render;
+render=function(){
+  if(view==='horasfuera'){ renderNav(); if($('kpis'))$('kpis').innerHTML=''; vHorasFuera(); return; }
+  return _render_prev.apply(this,arguments);
+};
+A.render=render;
+
+/* añadir "Horas extra" al menú, tras "Carga por técnico" */
+(async function(){
+  for(let i=0;i<40 && !APP_LISTA;i++) await new Promise(r=>setTimeout(r,400));
+  if(!APP_LISTA) return;
+  if(!NAV.some(n=>n.id==='horasfuera')){
+    const item={id:'horasfuera',t:'Horas extra',ic:'clock'};
+    const i=NAV.findIndex(n=>n.id==='tecnicos');
+    if(i>=0) NAV.splice(i+1,0,item);
+    else { const c=NAV.findIndex(n=>n.sep==='Control'); if(c>=0) NAV.splice(c,0,item); else NAV.push(item); }
+    renderNav();
+  }
+})();
+
+})();
+</script>
