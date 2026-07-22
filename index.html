@@ -2882,3 +2882,40 @@ A.render = render;
 
 })();
 </script>
+<script>
+/* ============================================================
+   BLOQUE · Parte v3 — TODAS las OT son principales (sep. " / ")
+   OT Secundaria en blanco. 100% ADITIVO. Sustituye la vista 'partes'.
+   ============================================================ */
+(function(){
+if(typeof S==='undefined'||!S){ setTimeout(arguments.callee,400); return; }
+if(window.__partesV3Listo) return; window.__partesV3Listo=true;
+
+function htmlParteOCA_v3(f,tecnico){
+  const otTodas = splitOT(f.ot).join(' / ');          // todas principales
+  const otros=splitTecnicos(f.tecnicos).filter(t=>t!==tecnico).join(', ');
+  const inst=[f.centro,f.ubicacion].filter(Boolean).join(' · ');
+  const F=(l,v)=>`<div class="fld"><span class="lb">${esc(l)}:</span> <span class="vl">${esc(v||'')}</span></div>`;
+  return `<div class="parte">
+    <div class="hdr"><div class="ttl">REGISTRO DE PEDIDO ESPECÍFICO<br>ORDEN DE TRABAJO ENSAYOS NO DESTRUCTIVOS</div><div class="logo">OCA<span>GLOBAL</span></div></div>
+    <div class="grid2 top">${F('Número Pedido',f.pedido)}${F('Número OT',otTodas)}${F('Técnica Inspección',f.tecnica)}${F('Nº OT Principal',otTodas)}<div></div>${F('OT Secundaria nº','')}</div>
+    <div class="sec">DETALLES ADMINISTRACIÓN</div>
+    <div class="grid2">${F('Oferta','')}${F('Nº Cita Servicio','')}${F('Instalación',inst)}${F('Versión Oferta','')}${F('Solicitante',f.cliente)}${F('NIF/CIF','')}</div>
+    <div class="sec">DETALLES INSTALACIÓN ENSAYO</div>
+    <div class="grid2">${F('Titular','')}${F('Contacto','')}${F('Dirección','')}${F('Población','')}${F('Correo','')}${F('Teléfono','')}${F('Fecha Prevista Inicio',fmtCorto(f.fecha))}${F('Fecha Prevista Fin','')}</div>
+    <div class="sec">DETALLES INSPECCIÓN</div>
+    <div class="grid2">${F('Técnica Inspección',f.tecnica)}${F('Procedimiento Ensayo','')}${F('Norma Ensayo',f.codigo)}${F('Norma Evaluación','')}${F('Nivel de Ensayo','')}${F('Nivel Evaluación','')}${F('Alcance Unitario','')}${F('Trabajo Acreditado','')}${F('Inspector Asignado',tecnico)}${F('Núm Informe Múltiple','')}${F('Inspector Auxiliar',otros)}<div></div></div>
+    <div class="note">El inspector asignado dispondrá de los equipos y cualificaciones necesarias para la realización de los ensayos descritos en el presente documento según el procedimiento aplicable.</div>
+    <div class="sec">ALCANCE PREVISTO</div>
+    ${F('Referencia Cliente','')}
+    <div class="fld"><span class="lb">Descripción Trabajos:</span> <span class="vl">${esc(f.proyecto||'')}</span></div>
+    <div class="sec">FACTURACIÓN</div>
+    ${F('Fecha de Inspección',fmtCorto(f.fecha))}
+    <table class="fact"><thead><tr><th style="width:64px">CANTIDAD</th><th>CONCEPTO</th><th style="width:118px">ARTÍCULO COMERCIAL</th><th style="width:74px">IMPORTE</th></tr></thead>
+    <tbody><tr><td>&nbsp;</td><td></td><td></td><td></td></tr><tr><td></td><td></td><td></td><td></td></tr><tr><td></td><td></td><td></td><td></td></tr><tr><td></td><td></td><td></td><td></td></tr></tbody></table>
+    <div class="sec">OBSERVACIONES</div><div class="obs"></div>
+    <div class="firmas">
+      <div class="fma"><div class="ln"></div>Válido Ejecución Responsable Calidad de Zona</div>
+      <div class="fma"><div class="ln"></div>INSPECTOR OCA ICP</div>
+      <div class="fma"><div class="ln"></div>CLIENTE / REPRESENTANTE*</div>
+    </div>
