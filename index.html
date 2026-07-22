@@ -2102,3 +2102,174 @@ A.render = render;
 
 })();
 </script>
+<script>
+/* ============================================================
+   BLOQUE · Cerrar "sin informe" por TÉCNICO (además de por OT)
+   100% ADITIVO — no toca la vista v_control_informes.
+   ============================================================ */
+(function(){
+if(typeof S==='undefined'||!S){ setTimeout(arguments.callee,400); return; }
+if(window.__lsiListo) return; window.__lsiListo=true;
+
+S.lineasCerradas = S.lineasCerradas || new Set();
+const keyLSI = c => String(c.ot)+'|'+String(c.tecnico||'')+'|'+String(c.fecha_trabajo||'').slice(0,10);
+const cerrada = c => S.lineasCerradas.has(keyLSI(c));
+
+DB.loadLineasSinInforme = async function(){
+  const {data,error}=await SB.from('linea_sin_informe').select('ot,tecnico,fecha');
+  if(error) throw error;
+  const s=new Set(); (data||[]).forEach(r=> s.add(String(r.ot)+'|'+String(r.tecnico||'')+'|'+String(r.fecha||'').slice(0,10)));
+  return s;
+};
+DB.marcarLinea = async function(ot,tecnico,fecha){
+  const {error}=await SB.from('linea_sin_informe')
+    .insert({ot:String(ot),tecnico:String(tecnico),fecha:String(fecha).slice(0,10),autor:YO.nombre||null});
+  if(error && !/duplicate key/i.test(error.message||'')) throw error;
+};
+DB.quitarLinea = async function(ot,tecnico,fecha){
+  const {error}=await SB.from('linea_sin_informe').delete()
+    .eq('ot',String(ot)).eq('tecnico',String(tecnico)).eq('fecha',String(fecha).slice(0,10));
+  if(error) throw error;
+};
+
+/* al recargar el control, refrescar también las líneas cerradas */
+const _ctrl_prev = DB.controlInformes.bind(DB);
+DB.controlInformes = async function(){
+  const rows = await _ctrl_prev();
+  try{ S.lineasCerradas = await DB.loadLineasSinInforme(); }catch(e){}
+  return rows;
+};
+
+/* el badge del menú no cuenta como vencidas las líneas cerradas */
+nVencidos = function(){ return (S.control||[]).filter(c=>c.vencido && !cerrada(c)).length; };
+
+/* --- vista de control, con la opción por técnico --- */
+vControl = function(){
+  const ctrl=S.control||[];
+  if(!ctrl.length){
+    $('main').innerHTML=`<div class="phead"><div><h2>Control de informes</h2>
+      <div class="sub">Cruce de la planificación con los informes de TRAZA·END. Semáforo de 48 h.</div></div></div>
+    <div class="card"><div class="empty">
+      <h2 style="color:var(--tx);margin-bottom:8px">Aún no hay informes cargados</h2>
+      Sube el archivo <b>.trazaend</b> que descarga Yumara de TRAZA·END.<br><br>
+      <button class="btn pri" onclick="A.go('informes')">${svg('up')} Subir informes (END)</button>
+    </div></div>`; return;
+  }
+  const activos=ctrl.filter(c=>!c.historico);
+  const histor=ctrl.filter(c=>c.historico).length;
+  const completos=activos.filter(c=>c.estado==='ENVIADO' && !cerrada(c)).length;
+  const sinInf=activos.filter(c=>c.estado==='SIN_INFORME' && !cerrada(c)).length;
+  const sinEnviar=activos.filter(c=>c.estado==='SIN_ENVIAR' && !cerrada(c)).length;
+  const vencidos=activos.filter(c=>c.vencido && !cerrada(c)).length;
+  const cerrados=activos.filter(c=> c.estado==='CERRADO_SIN_INFORME' || cerrada(c)).length;
+
+  const clientes=[...new Set(ctrl.map(c=>c.cliente).filter(Boolean))].sort();
+  const tecnicos=[...new Set(ctrl.map(c=>c.tecnico).filter(Boolean))].sort();
+  const fmt=(a,s)=>a.map(x=>`<option value="${esc(x)}" ${s===x?'selected':''}>${esc(x)}</option>`).join('');
+  let lista=ctrl.slice();
+  if(!FC.verHist) lista=lista.filter(c=>!c.historico);
+  if(FC.estado==='vencidos') lista=lista.filter(c=>c.vencido && !cerrada(c));
+  else if(FC.estado==='sin') lista=lista.filter(c=>c.estado==='SIN_INFORME' && !cerrada(c));
+  else if(FC.estado==='sinenviar') lista=lista.filter(c=>c.estado==='SIN_ENVIAR' && !cerrada(c));
+  else if(FC.estado==='cerrado') lista=lista.filter(c=> c.estado==='CERRADO_SIN_INFORME' || cerrada(c));
+  else if(FC.estado==='completo') lista=lista.filter(c=>c.estado==='ENVIADO' && !cerrada(c));
+  if(FC.cliente) lista=lista.filter(c=>c.cliente===FC.cliente);
+  if(FC.tecnico) lista=lista.filter(c=>c.tecnico===FC.tecnico);
+  if(FC.ot){const q=FC.ot.replace(/\D/g,''); if(q) lista=lista.filter(c=>String(c.ot).includes(q));}
+  if(FC.q){const q=FC.q.toLowerCase(); lista=lista.filter(c=>[c.ot,c.cliente,c.tecnico].join(' ').toLowerCase().includes(q));}
+  lista.sort((a,b)=> ((b.vencido&&!cerrada(b))-(a.vencido&&!cerrada(a))) || String(b.fecha_trabajo).localeCompare(String(a.fecha_trabajo)));
+
+  const total=ctrl.length;
+  $('main').innerHTML=`<div class="phead"><div><h2>Control de informes</h2>
+    <div class="sub">Planificación → trabajo → informe hecho y enviado. El reloj de <b>48 h</b> arranca el día del trabajo y se para cuando el informe se <b>envía al cliente</b>.</div></div>
+    <div class="actions"><button class="btn" onclick="A.recargarControl()">Actualizar</button>
+      <button class="btn pri" onclick="A.go('informes')">${svg('up')} Subir informes (END)</button></div></div>
+  <div class="kpis" style="padding:0 0 11px">
+    <div class="kpi ${vencidos?'b':'g'}"><div class="k">Vencidos (+48h)</div><div class="v">${vencidos}</div><div class="s">requieren acción</div></div>
+    <div class="kpi ${sinInf?'b':''}"><div class="k">Sin informe</div><div class="v">${sinInf}</div><div class="s">llamar al técnico</div></div>
+    <div class="kpi ${sinEnviar?'w':''}"><div class="k">Sin enviar</div><div class="v">${sinEnviar}</div><div class="s">avisar a Yumara</div></div>
+    <div class="kpi g"><div class="k">Completos</div><div class="v">${completos}</div><div class="s">enviados al cliente</div></div>
+    <div class="kpi a"><div class="k">Cerrados sin informe</div><div class="v">${cerrados}</div><div class="s">interno / por técnico</div></div>
+  </div>
+  <div class="searchbar">
+    <button class="btn sm ${FC.estado===''?'on':''}" onclick="A.setFC('estado','')">Todos</button>
+    <button class="btn sm ${FC.estado==='vencidos'?'on':''}" onclick="A.setFC('estado','vencidos')">🔴 Vencidos</button>
+    <button class="btn sm ${FC.estado==='sin'?'on':''}" onclick="A.setFC('estado','sin')">Sin informe</button>
+    <button class="btn sm ${FC.estado==='sinenviar'?'on':''}" onclick="A.setFC('estado','sinenviar')">🟠 Sin enviar</button>
+    <button class="btn sm ${FC.estado==='cerrado'?'on':''}" onclick="A.setFC('estado','cerrado')">🔵 Cerrados</button>
+    <button class="btn sm ${FC.estado==='completo'?'on':''}" onclick="A.setFC('estado','completo')">🟢 Completos</button>
+    <button class="btn sm ${FC.verHist?'on':''}" onclick="A.toggleHist()">${FC.verHist?'Ocultar':'Ver'} histórico</button>
+    <select onchange="A.setFC('tecnico',this.value)"><option value="">Todos los técnicos</option>${fmt(tecnicos,FC.tecnico)}</select>
+    <select onchange="A.setFC('cliente',this.value)"><option value="">Todos los clientes</option>${fmt(clientes,FC.cliente)}</select>
+    <input class="mono" style="width:100px" placeholder="OT…" value="${esc(FC.ot)}" oninput="A.setFC('ot',this.value)">
+    <span class="dim">${lista.length} de ${total}</span>
+  </div>
+  <div class="card"><table class="t"><thead><tr>
+    <th>Estado</th><th>Técnico</th><th>Cliente</th><th>OT</th><th>Fecha trabajo</th>
+    <th>Acción</th><th>Envío</th></tr></thead><tbody>
+  ${lista.length?lista.map(c=>{
+    let badge, accion;
+    const puedeMarcar = soyDelegado() || (YO.rol==='coordinacion');
+    const cl=cerrada(c), f10=String(c.fecha_trabajo).slice(0,10);
+    if(cl && !c.historico){
+      badge='<span class="badge" style="background:#E7F0FB;color:#1F4E89;border:1px solid #BBD3EE">🔵 Cerrado (sin informe)</span> <span class="dim" style="font-size:10px">(solo este técnico)</span>';
+      accion=puedeMarcar?`<button class="btn sm" onclick="A.quitarLineaSinInforme('${esc(c.ot)}','${esc(c.tecnico)}','${esc(f10)}')">Quitar marca</button> <span class="dim">lo hizo otro técnico</span>`:'<span class="dim">lo hizo otro técnico</span>';
+    }
+    else if(c.historico){ badge='<span class="badge b-ok">🟢 Enviado</span> <span class="dim" style="font-size:10px">(histórico)</span>';
+      accion='<span class="dim">Cerrado — anterior al 8 jul</span>'; }
+    else if(c.estado==='ENVIADO'){ badge='<span class="badge b-ok">🟢 Enviado</span>'; accion='<span class="dim">—</span>'; }
+    else if(c.estado==='SIN_ENVIAR'){ badge='<span class="badge b-warn">🟠 Sin enviar</span>';
+      accion='<b style="color:var(--warn)">Avisar a Yumara</b> <span class="dim">(informe hecho, falta enviar)</span>'; }
+    else if(c.estado==='CERRADO_SIN_INFORME'){ badge='<span class="badge" style="background:#E7F0FB;color:#1F4E89;border:1px solid #BBD3EE">🔵 Cerrado (sin informe)</span> <span class="dim" style="font-size:10px">(toda la OT)</span>';
+      accion=puedeMarcar?`<button class="btn sm" onclick="A.quitarSinInforme('${esc(c.ot)}')">Quitar marca (OT)</button> <span class="dim">interno del cliente</span>`:'<span class="dim">interno del cliente</span>'; }
+    else { badge='<span class="badge b-bad">🔴 Sin informe</span>';
+      accion=`<b style="color:var(--bad)">Llamar al técnico</b>${puedeMarcar?` · <button class="btn sm" onclick="A.dialogoSinInforme('${esc(c.ot)}','${esc(c.tecnico)}','${esc(f10)}')">Cerrar sin informe</button>`:''}`; }
+    const venc=(c.vencido && !cl)?' <span class="badge b-bad" title="Más de 48 h desde el trabajo">+48h</span>':'';
+    return `<tr${(c.vencido&&!cl)?' style="background:#FEF6F5"':''}>
+      <td>${badge}${venc}</td>
+      <td><b>${esc(c.tecnico||'—')}</b></td>
+      <td>${esc(c.cliente||'—')}</td>
+      <td class="mono">${esc(c.ot)}</td>
+      <td class="mono">${esc(fmtCorto(c.fecha_trabajo))}</td>
+      <td style="font-size:12px">${accion}</td>
+      <td class="dim">${c.ultimo_envio?esc(new Date(c.ultimo_envio).toLocaleDateString('es-ES')):'—'}</td></tr>`;
+  }).join(''):`<tr><td colspan="7"><div class="empty">Sin resultados con este filtro.</div></td></tr>`}
+  </tbody></table></div>`;
+};
+
+/* --- diálogo: toda la OT vs solo este técnico --- */
+A.dialogoSinInforme = (ot,tecnico,fecha)=>{
+  if(!(soyDelegado()||YO.rol==='coordinacion')){toast('No tienes permiso.');return;}
+  openModal(`<h3>Cerrar sin informe · OT ${esc(ot)}</h3>
+    <div class="mbody">
+      <p style="margin-bottom:10px">¿Qué cierras para esta OT del <b>${esc(fmtCorto(fecha))}</b>?</p>
+      <div class="alert i"><b>Solo ${esc(tecnico)}</b> — fueron dos técnicos y el informe lo hace otro. Se cierra <b>solo</b> la línea de ${esc(tecnico)}; los demás siguen su control normal.</div>
+      <div class="alert w"><b>Toda la OT ${esc(ot)}</b> — trabajo interno del cliente que no lleva informe. Se cierran <b>todas</b> las líneas de esta OT.</div>
+    </div>
+    <div class="mfoot"><button class="btn" onclick="A.closeModal()">Cancelar</button>
+      <button class="btn" onclick="A.marcarSinInforme('${esc(ot)}')">Toda la OT</button>
+      <button class="btn pri" onclick="A.marcarLineaSinInforme('${esc(ot)}','${esc(tecnico)}','${esc(fecha)}')">Solo ${esc(tecnico)}</button></div>`);
+};
+A.marcarLineaSinInforme = async (ot,tecnico,fecha)=>{
+  if(!(soyDelegado()||YO.rol==='coordinacion')){toast('No tienes permiso.');return;}
+  closeModal();
+  try{ await DB.marcarLinea(ot,tecnico,fecha); S.lineasCerradas=await DB.loadLineasSinInforme(); render();
+    toast('Línea de '+esc(tecnico)+' cerrada (sin informe).'); }
+  catch(e){ toast('No se pudo cerrar: '+esc(errTxt(e))); }
+};
+A.quitarLineaSinInforme = async (ot,tecnico,fecha)=>{
+  if(!(soyDelegado()||YO.rol==='coordinacion')){toast('No tienes permiso.');return;}
+  try{ await DB.quitarLinea(ot,tecnico,fecha); S.lineasCerradas=await DB.loadLineasSinInforme(); render();
+    toast('Marca quitada de '+esc(tecnico)+'.'); }
+  catch(e){ toast('No se pudo quitar: '+esc(errTxt(e))); }
+};
+
+/* carga inicial */
+(async function(){
+  for(let i=0;i<40 && !APP_LISTA;i++) await new Promise(r=>setTimeout(r,400));
+  if(!APP_LISTA || !YO.rol) return;
+  try{ S.lineasCerradas=await DB.loadLineasSinInforme(); if(view==='control') render(); }catch(e){}
+})();
+
+})();
+</script>
