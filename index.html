@@ -2531,3 +2531,180 @@ A.render = render;
 
 })();
 </script>
+<script>
+/* ============================================================
+   BLOQUE · Partes de trabajo (Fase 1): generar autorelleno,
+   enviar por Gmail y marcar recibido a mano. 100% ADITIVO.
+   El parte NO se guarda: solo la marca de recepción.
+   ============================================================ */
+(function(){
+if(typeof S==='undefined'||!S){ setTimeout(arguments.callee,400); return; }
+if(window.__partesListo) return; window.__partesListo=true;
+
+S.partesRecibidos = S.partesRecibidos || new Map();
+
+const _svg_prev = svg;
+svg = function(n){ if(n==='doc') return '<svg class="ic" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h8M8 17h8"/></svg>'; return _svg_prev(n); };
+
+DB.loadPartesRecibidos = async function(){
+  const {data,error}=await SB.from('parte_recibido').select('fecha,tecnico,recibido_por,recibido_en');
+  if(error) throw error;
+  const m=new Map(); (data||[]).forEach(r=> m.set(r.fecha+'|'+r.tecnico,{por:r.recibido_por,en:r.recibido_en}));
+  return m;
+};
+DB.marcarRecibidoParte = async function(fecha,tecnico){
+  const {error}=await SB.from('parte_recibido').insert({fecha,tecnico,recibido_por:YO.nombre||null});
+  if(error && !/duplicate key/i.test(error.message||'')) throw error;
+};
+DB.quitarRecibidoParte = async function(fecha,tecnico){
+  const {error}=await SB.from('parte_recibido').delete().eq('fecha',fecha).eq('tecnico',tecnico);
+  if(error) throw error;
+};
+
+/* ---- Generación del parte (imprimible / Guardar como PDF) ---- */
+function htmlParteOCA(f,tecnico){
+  const ots=splitOT(f.ot), p=ots[0]||'', sec=ots.slice(1).join(', ');
+  const otros=splitTecnicos(f.tecnicos).filter(t=>t!==tecnico).join(', ');
+  const inst=[f.centro,f.ubicacion].filter(Boolean).join(' · ');
+  const F=(l,v)=>`<div class="fld"><span class="lb">${esc(l)}:</span> <span class="vl">${esc(v||'')}</span></div>`;
+  return `<div class="parte">
+    <div class="hdr"><div class="ttl">REGISTRO DE PEDIDO ESPECÍFICO<br>ORDEN DE TRABAJO ENSAYOS NO DESTRUCTIVOS</div><div class="logo">OCA<span>GLOBAL</span></div></div>
+    <div class="grid2 top">${F('Número Pedido',f.pedido)}${F('Número OT',p)}${F('Técnica Inspección',f.tecnica)}${F('Nº OT Principal',p)}<div></div>${F('OT Secundaria nº',sec)}</div>
+    <div class="sec">DETALLES ADMINISTRACIÓN</div>
+    <div class="grid2">${F('Oferta','')}${F('Nº Cita Servicio','')}${F('Instalación',inst)}${F('Versión Oferta','')}${F('Solicitante',f.cliente)}${F('NIF/CIF','')}</div>
+    <div class="sec">DETALLES INSTALACIÓN ENSAYO</div>
+    <div class="grid2">${F('Titular','')}${F('Contacto','')}${F('Dirección','')}${F('Población','')}${F('Correo','')}${F('Teléfono','')}${F('Fecha Prevista Inicio',fmtCorto(f.fecha))}${F('Fecha Prevista Fin','')}</div>
+    <div class="sec">DETALLES INSPECCIÓN</div>
+    <div class="grid2">${F('Técnica Inspección',f.tecnica)}${F('Procedimiento Ensayo','')}${F('Norma Ensayo',f.codigo)}${F('Norma Evaluación','')}${F('Nivel de Ensayo','')}${F('Nivel Evaluación','')}${F('Alcance Unitario','')}${F('Trabajo Acreditado','')}${F('Inspector Asignado',tecnico)}${F('Núm Informe Múltiple','')}${F('Inspector Auxiliar',otros)}<div></div></div>
+    <div class="note">El inspector asignado dispondrá de los equipos y cualificaciones necesarias para la realización de los ensayos descritos en el presente documento según el procedimiento aplicable.</div>
+    <div class="sec">ALCANCE PREVISTO</div>
+    ${F('Referencia Cliente','')}
+    <div class="fld"><span class="lb">Descripción Trabajos:</span> <span class="vl">${esc(f.obs||'')}</span></div>
+    <div class="sec">FACTURACIÓN</div>
+    ${F('Fecha de Inspección',fmtCorto(f.fecha))}
+    <table class="fact"><thead><tr><th style="width:64px">CANTIDAD</th><th>CONCEPTO</th><th style="width:118px">ARTÍCULO COMERCIAL</th><th style="width:74px">IMPORTE</th></tr></thead>
+    <tbody><tr><td>&nbsp;</td><td></td><td></td><td></td></tr><tr><td></td><td></td><td></td><td></td></tr><tr><td></td><td></td><td></td><td></td></tr><tr><td></td><td></td><td></td><td></td></tr></tbody></table>
+    <div class="sec">OBSERVACIONES</div><div class="obs"></div>
+    <div class="firmas">
+      <div class="fma"><div class="ln"></div>Válido Ejecución Responsable Calidad de Zona</div>
+      <div class="fma"><div class="ln"></div>INSPECTOR OCA ICP</div>
+      <div class="fma"><div class="ln"></div>CLIENTE / REPRESENTANTE*</div>
+    </div>
+    <div class="legal">* La firma del presente documento supone la aceptación de los datos contenidos en el mismo.<br>
+    *Atendiendo a la solicitud del cliente, o bien por estar fuera del alcance acreditado, los ensayos referidos en este pedido NO están cubiertos por la acreditación ENAC 400/LE875 ni por sus acuerdos internacionales de reconocimiento. Dicha circunstancia se hará constar en los informes de la inspección emitidos a raíz de los trabajos descritos.<br>
+    Este documento solo afecta a los componentes y partes sometidas a ensayo, identificadas en el mismo y en sus registros adjuntos de acuerdo a las referencias dadas por el cliente. Salvo indicación específica en contra, se emplearán las normas y procedimientos de ensayo en su última revisión aplicable según Manual de Calidad disponible para consulta. Salvo indicación específica en contra, no se prevén subcontrataciones parciales ni completas del alcance de este pedido.<br>
+    OCA Inspección Control y Prevención, SAU informa de que determinará la realización de sus inspecciones como laboratorio en función de las actuaciones realizadas sobre el ítem a inspeccionar, de acuerdo con su Política de Independencia e Imparcialidad. La firma de este documento comporta haber leído y aceptar las condiciones generales de contratación. Los datos personales facilitados se recogen con finalidades administrativas de la relación que nos vincula; puede ejercer sus derechos mediante escrito al Responsable o email a lopd@ocaglobal.com, asunto "Protección de Datos".</div>
+    <div class="foot">OCA INSPECCIÓN CONTROL Y PREVENCIÓN, S.A.U · Vía de las Dos Castillas, 7 · 28224 Pozuelo de Alarcón (Madrid) · ensayos@ocaglobal.com<br>
+    Delegación comercial: Cádiz - EN · cadiz.ensayos@ocaglobal.com · www.ocaglobal.com · F.PG-16.7200.04 REV.03 08/25</div>
+  </div>`;
+}
+function htmlDocPartes(fecha,tecnico,rows){
+  const css=`body{font:11px/1.35 Arial,Helvetica,sans-serif;color:#1a1a1a;margin:0;background:#fff}
+  .noprint{padding:10px;background:#eef2f7;border-bottom:1px solid #ccc;text-align:center}
+  .noprint button{padding:8px 18px;font-size:13px;background:#1F4E89;color:#fff;border:0;border-radius:6px;cursor:pointer}
+  .parte{max-width:800px;margin:0 auto;padding:14px 20px;page-break-after:always}
+  .parte:last-child{page-break-after:auto}
+  .hdr{display:flex;justify-content:space-between;align-items:flex-start;background:#1b2430;color:#fff;padding:11px 14px}
+  .hdr .ttl{font-weight:700;font-size:12px;line-height:1.3}
+  .hdr .logo{font-weight:800;font-size:19px;letter-spacing:1px;text-align:right}
+  .hdr .logo span{display:block;font-size:7px;letter-spacing:3px;font-weight:600}
+  .sec{color:#C0392B;font-weight:700;font-size:11.5px;margin:11px 0 4px;border-bottom:1px solid #eee;padding-bottom:2px}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:1px 24px}.top{margin-top:9px}
+  .fld{font-size:10.5px;padding:2px 0;border-bottom:1px dotted #e6e6e6}
+  .fld .lb{font-weight:700;color:#333}.fld .vl{color:#0b3a6b}
+  .note{font-size:9px;color:#555;margin:6px 0}
+  table.fact{width:100%;border-collapse:collapse;margin-top:4px;font-size:9.5px}
+  .fact th{background:#f2f2f2;border:1px solid #ccc;padding:4px;text-align:left;font-size:8.5px}
+  .fact td{border:1px solid #ccc;height:19px}
+  .obs{border:1px solid #ddd;min-height:58px;margin-top:4px}
+  .firmas{display:flex;gap:16px;margin-top:24px}
+  .firmas .fma{flex:1;font-size:8.5px;text-align:center;color:#333}
+  .firmas .ln{border-top:1px solid #333;margin-bottom:4px;height:32px}
+  .legal{font-size:7.3px;color:#555;margin-top:12px;line-height:1.3;text-align:justify}
+  .foot{font-size:8px;color:#333;text-align:center;margin-top:9px;border-top:1px solid #C0392B;padding-top:5px;font-weight:600}
+  @media print{.noprint{display:none}.parte{max-width:none;margin:0;padding:9mm}}`;
+  const cuerpo=rows.map(f=>htmlParteOCA(f,tecnico)).join('');
+  return '<!DOCTYPE html><html lang="es"><head><meta charset="utf-8"><title>Parte '+esc(tecnico)+' '+esc(fecha)+'</title><style>'+css+'</style></head><body>'+
+    '<div class="noprint"><button onclick="window.print()">Imprimir / Guardar como PDF</button> &nbsp; '+rows.length+' parte(s) · '+esc(tecnico)+' · '+esc(fmtCorto(fecha))+'</div>'+
+    cuerpo+'</body></html>';
+}
+function abrirPartes(fecha,tecnico){
+  const rows=S.filas.filter(f=>f.fecha===fecha && f.tipo==='PRODUCTIVO' && splitTecnicos(f.tecnicos).includes(tecnico));
+  if(!rows.length){ toast('Ese técnico no tiene trabajos productivos ese día.'); return; }
+  const w=window.open('','_blank');
+  if(!w){ toast('El navegador bloqueó la ventana. Permite ventanas emergentes y reinténtalo.'); return; }
+  w.document.open(); w.document.write(htmlDocPartes(fecha,tecnico,rows)); w.document.close();
+}
+function correoParte(fecha,tecnico){
+  const rows=S.filas.filter(f=>f.fecha===fecha && f.tipo==='PRODUCTIVO' && splitTecnicos(f.tecnicos).includes(tecnico));
+  const su='Parte de trabajo · '+fmtCorto(fecha)+' · '+tecnico;
+  const L=['Hola '+tecnico+',','','Te adjunto tu parte de trabajo para el '+fmtDia(fecha)+'. Trabajos previstos:',''];
+  rows.forEach((f,i)=>{ const p=splitOT(f.ot)[0]||'—';
+    L.push((i+1)+'. OT '+p+' · '+(f.cliente||'—')+' · '+(f.tecnica||'—')+(f.ubicacion?' · '+f.ubicacion:'')+(f.horario?' · '+f.horario:'')); });
+  L.push('','Por favor, firma el parte y devuélvelo respondiendo a este mismo correo (foto o escaneo).','','Gracias.','Delegación 1110 · Cádiz · OCA Global');
+  window.open('https://mail.google.com/mail/?view=cm&fs=1&to=&su='+encodeURIComponent(su)+'&body='+encodeURIComponent(L.join('\n')),'_blank');
+}
+
+function vPartes(){
+  const puede=puedoEditar();
+  const rows=S.filas.filter(f=>f.fecha===dia && f.tipo==='PRODUCTIVO');
+  const porTec={}; rows.forEach(f=>{ splitTecnicos(f.tecnicos).forEach(t=>{ (porTec[t]=porTec[t]||[]).push(f); }); });
+  const tecs=Object.keys(porTec).sort();
+  const cuerpo = tecs.length ? tecs.map(t=>{
+    const rs=porTec[t]; const rec=S.partesRecibidos.get(dia+'|'+t);
+    const trabajos=rs.map(f=>{const p=splitOT(f.ot)[0]||'—';
+      return `<div class="dim" style="font-size:11.5px">OT <b class="mono">${esc(p)}</b> · ${esc(f.cliente||'—')} · ${esc(f.tecnica||'—')}${f.ubicacion?' · '+esc(f.ubicacion):''}${f.horario?' · '+esc(f.horario):''}</div>`;}).join('');
+    return `<tr>
+      <td><b>${esc(t)}</b><br><span class="dim" style="font-size:10.5px">${rs.length} parte(s)</span></td>
+      <td>${trabajos}</td>
+      <td>${rec?`<span class="badge b-ok">✓ Recibido</span><br><span class="dim" style="font-size:10px">${esc(rec.por||'')}${rec.en?' · '+esc(fmtCorto(String(rec.en).slice(0,10))):''}</span>`:'<span class="badge b-gray">Pendiente</span>'}</td>
+      <td class="tar" style="white-space:nowrap">
+        <button class="btn sm pri" onclick="A.generarPartes('${esc(t)}')">Generar parte</button>
+        <button class="btn sm" onclick="A.correoParte('${esc(t)}')">Correo</button>
+        ${puede?(rec?`<button class="btn sm" onclick="A.quitarRecibidoParte('${esc(t)}')">Quitar recibido</button>`:`<button class="btn sm" onclick="A.marcarRecibidoParte('${esc(t)}')">Marcar recibido</button>`):''}
+      </td></tr>`;
+  }).join('') : `<tr><td colspan="4"><div class="empty">Sin trabajos productivos planificados este día.</div></td></tr>`;
+  $('main').innerHTML=`
+  <div class="phead"><div><h2>Partes de trabajo del día</h2>
+    <div class="sub">Genera el parte autorelleno de cada técnico (uno por OT), envíalo por correo y marca la recepción. El documento no se guarda; solo la marca de recibido.</div></div></div>
+  <div class="daybar">
+    <button class="btn sm" onclick="A.dia(-1)">${svg('prev')}</button>
+    <button class="btn sm" onclick="A.hoy()">Hoy</button>
+    <button class="btn sm" onclick="A.dia(1)">${svg('next')}</button>
+    <div class="dlabel">${esc(fmtDia(dia))}</div>
+    <input type="date" value="${esc(dia)}" onchange="A.setDia(this.value)">
+    <span class="dim" style="margin-left:6px">${tecs.length} técnico(s)</span></div>
+  <div class="alert i">Flujo: <b>Generar parte</b> → <i>Guardar como PDF</i> · <b>Correo</b> abre Gmail (asunto y cuerpo listos) → adjunta el PDF y elige al técnico → él firma y responde al mismo correo → <b>Marcar recibido</b>.</div>
+  <div class="card"><table class="t"><thead><tr><th style="width:130px">Técnico</th><th>Trabajos (parte por OT)</th><th style="width:120px">Recepción</th><th class="tar">Acciones</th></tr></thead>
+  <tbody>${cuerpo}</tbody></table></div>`;
+}
+
+A.generarPartes = (t)=>abrirPartes(dia,t);
+A.correoParte = (t)=>correoParte(dia,t);
+A.marcarRecibidoParte = async(t)=>{ if(!puedoEditar()){toast('Tu rol es de solo consulta.');return;}
+  try{ await DB.marcarRecibidoParte(dia,t); S.partesRecibidos=await DB.loadPartesRecibidos(); render(); toast('Parte de '+esc(t)+' marcado como recibido.'); }
+  catch(e){ toast('No se pudo: '+esc(errTxt(e))); } };
+A.quitarRecibidoParte = async(t)=>{ if(!puedoEditar()){toast('Tu rol es de solo consulta.');return;}
+  try{ await DB.quitarRecibidoParte(dia,t); S.partesRecibidos=await DB.loadPartesRecibidos(); render(); toast('Marca quitada.'); }
+  catch(e){ toast('No se pudo: '+esc(errTxt(e))); } };
+
+const _render_prev = render;
+render = function(){
+  if(view==='partes'){ renderNav(); if($('kpis'))$('kpis').innerHTML=''; vPartes(); return; }
+  return _render_prev.apply(this,arguments);
+};
+A.render = render;
+
+(async function(){
+  for(let i=0;i<40 && !APP_LISTA;i++) await new Promise(r=>setTimeout(r,400));
+  if(!APP_LISTA) return;
+  if(!NAV.some(n=>n.id==='partes')){
+    const item={id:'partes',t:'Partes de trabajo',ic:'doc'};
+    const c=NAV.findIndex(n=>n.sep==='Control'); if(c>=0) NAV.splice(c,0,item); else NAV.push(item);
+    renderNav();
+  }
+  try{ S.partesRecibidos=await DB.loadPartesRecibidos(); if(view==='partes') render(); }catch(e){ S.partesRecibidos=S.partesRecibidos||new Map(); }
+})();
+
+})();
+</script>
