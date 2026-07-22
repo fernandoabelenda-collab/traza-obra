@@ -2430,3 +2430,104 @@ A.render=render;
 
 })();
 </script>
+<script>
+/* ============================================================
+   BLOQUE · Horas fuera de jornada v2 — finde y festivos = todo extra
+   100% ADITIVO. Sobrescribe solo la vista 'horasfuera'.
+   Festivos nacionales + autonómicos de Andalucía 2026 incluidos.
+   Locales: se marcan a mano (tipo FESTIVO en la planificación).
+   ============================================================ */
+(function(){
+if(typeof S==='undefined'||!S){ setTimeout(arguments.callee,400); return; }
+if(window.__horasFuera2Listo) return; window.__horasFuera2Listo=true;
+
+const FESTIVOS_AND_2026 = {
+  '2026-01-01':'Año Nuevo','2026-01-06':'Reyes','2026-02-28':'Día de Andalucía',
+  '2026-04-02':'Jueves Santo','2026-04-03':'Viernes Santo','2026-05-01':'Fiesta del Trabajo',
+  '2026-08-15':'Asunción','2026-10-12':'Fiesta Nacional','2026-11-02':'Todos los Santos',
+  '2026-12-07':'Constitución','2026-12-08':'Inmaculada','2026-12-25':'Navidad'
+};
+
+function vHorasFuera2(){
+  const lineas = filtra(enAmbito());
+  const festLocal = new Set();
+  S.filas.forEach(f=>{ if(f.tipo==='FESTIVO' && f.fecha) festLocal.add(f.fecha); });
+  const esFestivoNac = iso => FESTIVOS_AND_2026.hasOwnProperty(iso);
+  const esFestivo = iso => esFestivoNac(iso) || festLocal.has(iso);
+
+  const acc={};
+  lineas.forEach(l=>{
+    if(l.horas==null || !l.tecnico) return;
+    if(['VACACIONES','BAJA','FESTIVO'].includes(l.tipo)) return;   // marcadores de no-trabajo
+    const k=l.tecnico+'|'+l.fecha;
+    const o=acc[k]||(acc[k]={tecnico:l.tecnico,fecha:l.fecha,horas:0,horarios:[]});
+    o.horas+=l.horas;
+    if(l.horario) o.horarios.push(l.horario);
+  });
+
+  const dias=[];
+  Object.values(acc).forEach(o=>{
+    const dw=new Date(o.fecha+'T12:00:00').getDay();   // 0=Dom .. 6=Sáb
+    const finde=(dw===0||dw===6), festi=esFestivo(o.fecha);
+    let exceso,motivo,clase;
+    if(finde||festi){
+      exceso=Math.round(o.horas*100)/100;
+      motivo = festi ? (esFestivoNac(o.fecha)?FESTIVOS_AND_2026[o.fecha]:'Festivo local') : (dw===6?'Sábado':'Domingo');
+      clase='b-pur';
+    } else {
+      exceso=Math.round((o.horas-8)*100)/100; motivo='+8 h'; clase='b-warn';
+    }
+    if(exceso>0) dias.push(Object.assign(o,{exceso,motivo,clase,finde,festi}));
+  });
+
+  const porTec={};
+  dias.forEach(d=>{ const o=porTec[d.tecnico]||(porTec[d.tecnico]={tecnico:d.tecnico,dias:0,horas:0,he:0,ff:0});
+    o.dias++; o.horas+=d.exceso; if(d.finde||d.festi) o.ff+=d.exceso; else o.he+=d.exceso; });
+  const resumen=Object.values(porTec).sort((a,b)=>b.horas-a.horas);
+  const totalExceso=dias.reduce((t,d)=>t+d.exceso,0);
+  const totalFF=dias.filter(d=>d.finde||d.festi).reduce((t,d)=>t+d.exceso,0);
+  const totalHE=totalExceso-totalFF;
+  dias.sort((a,b)=> b.fecha.localeCompare(a.fecha) || b.exceso-a.exceso);
+  const dow=['dom','lun','mar','mié','jue','vie','sáb'];
+
+  $('main').innerHTML=`
+  <div class="phead"><div><h2>Horas fuera de jornada</h2>
+    <div class="sub">Días laborables: lo que pase de <b>8 h</b>. <b>Fin de semana y festivos: todas las horas del día</b>. Para un periodo, pulsa <b>Ver rango → Mes</b>.</div></div></div>
+  ${barraFecha()}${barraFiltros()}
+  <div class="kpis" style="padding:0 0 11px">
+    <div class="kpi ${totalExceso>0?'w':'g'}"><div class="k">Total horas extra</div><div class="v">${nf(totalExceso,1)}</div><div class="s">${dias.length} día(s) con exceso</div></div>
+    <div class="kpi"><div class="k">Exceso &gt;8h (L-V)</div><div class="v">${nf(totalHE,1)}</div><div class="s">días laborables</div></div>
+    <div class="kpi b"><div class="k">Finde / festivo</div><div class="v">${nf(totalFF,1)}</div><div class="s">jornada completa</div></div>
+    <div class="kpi a"><div class="k">Técnicos afectados</div><div class="v">${resumen.length}</div><div class="s">en el periodo</div></div>
+  </div>
+  ${resumen.length?`<div class="card"><div class="ch">${svg('clock')} Resumen por técnico</div>
+    <table class="t"><thead><tr><th>Técnico</th><th class="tar">Días</th><th class="tar">Extra &gt;8h</th><th class="tar">Finde/festivo</th><th class="tar">Total</th></tr></thead><tbody>
+    ${resumen.map(r=>`<tr><td><b>${esc(r.tecnico)}</b></td><td class="tar mono">${r.dias}</td>
+      <td class="tar mono">${r.he>0?'+'+nf(r.he,1):'—'}</td>
+      <td class="tar mono" style="color:var(--pur)">${r.ff>0?'+'+nf(r.ff,1):'—'}</td>
+      <td class="tar mono" style="color:var(--warn);font-weight:700">+${nf(r.horas,1)}</td></tr>`).join('')}
+    <tr style="background:#F7F9FC;font-weight:700"><td>TOTAL</td><td class="tar mono">${dias.length}</td>
+      <td class="tar mono">+${nf(totalHE,1)}</td><td class="tar mono">+${nf(totalFF,1)}</td><td class="tar mono">+${nf(totalExceso,1)}</td></tr>
+    </tbody></table></div>
+  <div class="card"><div class="ch">Detalle por día</div>
+    <table class="t"><thead><tr><th>Fecha</th><th>Motivo</th><th>Técnico</th><th class="tar">Horas día</th><th class="tar">Extra</th><th>Horario(s)</th></tr></thead><tbody>
+    ${dias.map(d=>`<tr><td class="mono">${esc(fmtCorto(d.fecha))} <span class="dim" style="font-size:10px">${dow[new Date(d.fecha+'T12:00:00').getDay()]}</span></td>
+      <td><span class="badge ${d.clase}">${esc(d.motivo)}</span></td>
+      <td><b>${esc(d.tecnico)}</b></td>
+      <td class="tar mono">${nf(d.horas,1)}</td>
+      <td class="tar mono" style="color:var(--bad);font-weight:700">+${nf(d.exceso,1)}</td>
+      <td class="mono dim" style="font-size:11px">${esc(d.horarios.join(' + ')||'—')}</td></tr>`).join('')}
+    </tbody></table></div>`
+   :`<div class="card"><div class="empty">Sin horas fuera de jornada en este periodo.</div></div>`}
+  <div class="hint" style="margin-top:8px">Festivos nacionales y de Andalucía 2026 ya incluidos. <b>Festivos locales de Puerto Real</b>: márcalos con el tipo <b>FESTIVO</b> en la planificación y ese día contará como jornada completa extra.</div>`;
+}
+
+const _render_prev = render;
+render = function(){
+  if(view==='horasfuera'){ renderNav(); if($('kpis'))$('kpis').innerHTML=''; vHorasFuera2(); return; }
+  return _render_prev.apply(this,arguments);
+};
+A.render = render;
+
+})();
+</script>
