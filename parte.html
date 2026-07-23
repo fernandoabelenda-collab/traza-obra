@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Parte de trabajo · OCA Global</title>
+<style>
+*{box-sizing:border-box}
+body{font:12px/1.4 Arial,Helvetica,sans-serif;color:#1a1a1a;margin:0;background:#eef2f7}
+.bar{position:sticky;top:0;background:#1F4E89;color:#fff;padding:10px 12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;z-index:9}
+.bar .ti{font-weight:700;font-size:13px;flex:1}
+.bar button{background:#fff;color:#1F4E89;border:0;border-radius:6px;padding:9px 15px;font-size:13px;font-weight:700}
+.info{background:#FDF7EC;color:#7A4E06;padding:8px 12px;font-size:12px;border-bottom:1px solid #F0DDBC}
+.parte{max-width:820px;margin:12px auto;background:#fff;padding:14px 18px;box-shadow:0 2px 10px rgba(0,0,0,.12)}
+.hdr{display:flex;justify-content:space-between;background:#1b2430;color:#fff;padding:11px 14px}
+.hdr .ttl{font-weight:700;font-size:12px;line-height:1.3}
+.hdr .logo{font-weight:800;font-size:19px;letter-spacing:1px;text-align:right}
+.hdr .logo span{display:block;font-size:7px;letter-spacing:3px}
+.sec{color:#C0392B;font-weight:700;font-size:11.5px;margin:11px 0 4px;border-bottom:1px solid #eee;padding-bottom:2px}
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:1px 24px}
+.fld{font-size:11px;padding:3px 0;border-bottom:1px dotted #e6e6e6}
+.fld .lb{font-weight:700}.fld .vl{color:#0b3a6b}
+.note{font-size:9px;color:#555;margin:6px 0}
+table.fact{width:100%;border-collapse:collapse;margin-top:4px;font-size:10px}
+.fact th{background:#f2f2f2;border:1px solid #ccc;padding:4px;text-align:left;font-size:8.5px}
+.fact td{border:1px solid #ccc;height:22px;padding:2px 4px}
+.ed{min-height:20px;outline:none}
+.ed:focus{background:#FFFDF0}
+.obs{border:1px solid #ddd;min-height:70px;margin-top:4px;padding:6px;outline:none}
+.obs:focus{background:#FFFDF0}
+.firmas{display:flex;gap:14px;margin-top:20px}
+.fma{flex:1;font-size:9px;text-align:center}
+.sigbox{border:1px solid #333;height:95px;background:#fff;position:relative;border-radius:3px;overflow:hidden}
+canvas.sig{width:100%;height:100%;display:block;touch-action:none}
+img.sigimg{width:100%;height:100%;object-fit:contain;display:none}
+.sigbox.firmado canvas.sig{display:none}
+.sigbox.firmado img.sigimg{display:block}
+.ln{border:1px solid #333;height:95px;border-radius:3px;background:#fff}
+.sigtools{margin-top:4px;display:flex;gap:5px;justify-content:center}
+.sigtools button{font-size:11px;padding:5px 10px;border:1px solid #ccd;background:#fff;border-radius:5px}
+.nombre{width:100%;border:0;border-bottom:1px solid #999;font:inherit;font-size:10px;text-align:center;margin-top:5px;padding:3px;background:transparent}
+.legal{font-size:7.3px;color:#555;margin-top:12px;line-height:1.3;text-align:justify}
+.foot{font-size:8px;text-align:center;margin-top:9px;border-top:1px solid #C0392B;padding-top:5px;font-weight:600}
+@media(max-width:640px){.g2{grid-template-columns:1fr}.firmas{flex-direction:column}}
+@media print{
+.bar,.info,.sigtools{display:none}
+body{background:#fff}
+.parte{box-shadow:none;margin:0;max-width:none;padding:8mm;page-break-after:always}
+.parte:last-child{page-break-after:auto}
+.g2{grid-template-columns:1fr 1fr}
+.firmas{flex-direction:row}
+}
+</style>
+</head>
+<body>
+<div class="bar"><div class="ti" id="ti">Parte de trabajo</div><button onclick="guardar()">Firmar y guardar PDF</button></div>
+<div class="info">Rellena las observaciones si procede, firma con el dedo en los recuadros y pulsa <b>Firmar y guardar PDF</b>. Después responde al correo adjuntando el PDF.</div>
+<div id="app"></div>
+<script>
+function esc(s){ return (s==null?'':String(s)).replace(/[&<>"']/g,function(c){ return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]; }); }
+function fcorto(iso){ if(!iso) return ''; var p=String(iso).slice(0,10).split('-'); if(p.length!==3) return String(iso); return p[2]+'/'+p[1]+'/'+p[0].slice(2); }
+var D=null;
+try{ var hh=location.hash.slice(1); if(hh){ D=JSON.parse(decodeURIComponent(hh)); } }catch(e){ D=null; }
+function campo(l,v){ return '<div class="fld"><span class="lb">'+esc(l)+':</span> <span class="vl">'+esc(v||'')+'</span></div>'; }
+function parte(r,i){
+  var h='<div class="parte">';
+  h+='<div class="hdr"><div class="ttl">REGISTRO DE PEDIDO ESPECÍFICO<br>ORDEN DE TRABAJO ENSAYOS NO DESTRUCTIVOS</div><div class="logo">OCA<span>GLOBAL</span></div></div>';
+  h+='<div class="g2" style="margin-top:9px">'+campo('Número Pedido',r.p)+campo('Número OT',r.o)+campo('Técnica Inspección',r.t)+campo('Nº OT Principal',r.o)+'<div></div>'+campo('OT Secundaria nº','')+'</div>';
+  h+='<div class="sec">DETALLES ADMINISTRACIÓN</div>';
+  h+='<div class="g2">'+campo('Oferta','')+campo('Nº Cita Servicio','')+campo('Instalación',r.i)+campo('Versión Oferta','')+campo('Solicitante',r.s)+campo('NIF/CIF','')+'</div>';
+  h+='<div class="sec">DETALLES INSTALACIÓN ENSAYO</div>';
+  h+='<div class="g2">'+campo('Titular','')+campo('Contacto','')+campo('Dirección',r.d)+campo('Población','')+campo('Correo','')+campo('Teléfono','')+campo('Fecha Prevista Inicio',fcorto(D.f))+campo('Fecha Prevista Fin','')+'</div>';
+  h+='<div class="sec">DETALLES INSPECCIÓN</div>';
+  h+='<div class="g2">'+campo('Técnica Inspección',r.t)+campo('Procedimiento Ensayo','')+campo('Norma Ensayo',r.n)+campo('Norma Evaluación','')+campo('Nivel de Ensayo','')+campo('Nivel Evaluación','')+campo('Alcance Unitario','')+campo('Trabajo Acreditado','')+campo('Inspector Asignado',D.t)+campo('Núm Informe Múltiple','')+campo('Inspector Auxiliar',r.a)+'<div></div></div>';
+  h+='<div class="note">El inspector asignado dispondrá de los equipos y cualificaciones necesarias para la realización de los ensayos descritos en el presente documento según el procedimiento aplicable.</div>';
+  h+='<div class="sec">ALCANCE PREVISTO</div>'+campo('Referencia Cliente','');
+  h+='<div class="fld"><span class="lb">Descripción Trabajos:</span> <span class="vl">'+esc(r.x||'')+'</span></div>';
+  h+='<div class="sec">FACTURACIÓN</div>'+campo('Fecha de Inspección',fcorto(D.f));
+  h+='<table class="fact"><thead><tr><th style="width:64px">CANTIDAD</th><th>CONCEPTO</th><th style="width:110px">ARTÍCULO COMERCIAL</th><th style="width:74px">IMPORTE</th></tr></thead><tbody>';
+  for(var k=0;k<4;k++){ h+='<tr><td><div class="ed" contenteditable="true"></div></td><td><div class="ed" contenteditable="true"></div></td><td><div class="ed" contenteditable="true"></div></td><td><div class="ed" contenteditable="true"></div></td></tr>'; }
+  h+='</tbody></table>';
+  h+='<div class="sec">OBSERVACIONES</div><div class="obs" contenteditable="true"></div>';
+  h+='<div class="firmas">';
+  h+='<div class="fma"><div class="ln"></div><div style="margin-top:5px">Válido Ejecución Responsable Calidad de Zona</div></div>';
+  h+='<div class="fma"><div class="sigbox" id="bx'+i+'a"><canvas class="sig" id="cv'+i+'a"></canvas><img class="sigimg" id="im'+i+'a" alt=""></div>';
+  h+='<div class="sigtools"><button type="button" onclick="borrar(\'cv'+i+'a\')">Borrar firma</button></div>';
+  h+='<input class="nombre" type="text" value="'+esc(D.t||'')+'" placeholder="Nombre"><div style="margin-top:4px">INSPECTOR OCA ICP</div></div>';
+  h+='<div class="fma"><div class="sigbox" id="bx'+i+'b"><canvas class="sig" id="cv'+i+'b"></canvas><img class="sigimg" id="im'+i+'b" alt=""></div>';
+  h+='<div class="sigtools"><button type="button" onclick="borrar(\'cv'+i+'b\')">Borrar firma</button></div>';
+  h+='<input class="nombre" type="text" value="" placeholder="Nombre y DNI del cliente"><div style="margin-top:4px">CLIENTE / REPRESENTANTE*</div></div>';
+  h+='</div>';
+  h+='<div class="legal">* La firma del presente documento supone la aceptación de los datos contenidos en el mismo.<br>';
+  h+='*Atendiendo a la solicitud del cliente, o bien por estar fuera del alcance acreditado, los ensayos referidos en este pedido NO están cubiertos por la acreditación ENAC 400/LE875 ni por sus acuerdos internacionales de reconocimiento. Dicha circunstancia se hará constar en los informes de la inspección emitidos a raíz de los trabajos descritos.<br>';
+  h+='Este documento solo afecta a los componentes y partes sometidas a ensayo, identificadas en el mismo y en sus registros adjuntos de acuerdo a las referencias dadas por el cliente. Salvo indicación específica en contra, se emplearán las normas y procedimientos de ensayo en su última revisión aplicable según Manual de Calidad disponible para consulta. Salvo indicación específica en contra, no se prevén subcontrataciones parciales ni completas del alcance de este pedido.<br>';
+  h+='OCA Inspección Control y Prevención, SAU informa de que determinará la realización de sus inspecciones como laboratorio en función de las actuaciones realizadas sobre el ítem a inspeccionar, de acuerdo con su Política de Independencia e Imparcialidad. La firma de este documento comporta haber leído y aceptar las condiciones generales de contratación. Los datos personales facilitados se recogen con finalidades administrativas de la relación que nos vincula; puede ejercer sus derechos mediante escrito al Responsable o email a lopd@ocaglobal.com, asunto "Protección de Datos".</div>';
+  h+='<div class="foot">OCA INSPECCIÓN CONTROL Y PREVENCIÓN, S.A.U · Vía de las Dos Castillas, 7 · 28224 Pozuelo de Alarcón (Madrid) · ensayos@ocaglobal.com<br>Delegación comercial: Cádiz - EN · cadiz.ensayos@ocaglobal.com · www.ocaglobal.com · F.PG-16.7200.04 REV.03 08/25</div>';
+  h+='</div>';
+  return h;
+}
+function firma(cv){
+  var b=cv.getBoundingClientRect();
+  var dpr=window.devicePixelRatio||1;
+  cv.width=Math.max(1,Math.round(b.width*dpr));
+  cv.height=Math.max(1,Math.round(b.height*dpr));
+  var ctx=cv.getContext('2d');
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  ctx.lineWidth=2.2; ctx.lineCap='round'; ctx.lineJoin='round'; ctx.strokeStyle='#0b2545';
+  var dib=false,last=null;
+  function pos(e){ var r=cv.getBoundingClientRect(); var p=(e.touches&&e.touches[0])?e.touches[0]:e; return {x:p.clientX-r.left,y:p.clientY-r.top}; }
+  function ini(e){ e.preventDefault(); dib=true; last=pos(e); }
+  function mov(e){ if(!dib) return; e.preventDefault(); var p=pos(e); ctx.beginPath(); ctx.moveTo(last.x,last.y); ctx.lineTo(p.x,p.y); ctx.stroke(); last=p; cv.setAttribute('data-hay','1'); }
+  function fin(){ dib=false; }
+  cv.addEventListener('mousedown',ini);
+  cv.addEventListener('mousemove',mov);
+  window.addEventListener('mouseup',fin);
+  cv.addEventListener('touchstart',ini,{passive:false});
+  cv.addEventListener('touchmove',mov,{passive:false});
+  cv.addEventListener('touchend',fin);
+}
+function borrar(id){
+  var cv=document.getElementById(id); if(!cv) return;
+  var ctx=cv.getContext('2d');
+  ctx.save(); ctx.setTransform(1,0,0,1,0,0); ctx.clearRect(0,0,cv.width,cv.height); ctx.restore();
+  cv.setAttribute('data-hay','');
+  var box=cv.parentNode; if(box) box.className='sigbox';
+}
+function guardar(){
+  var bx=document.querySelectorAll('.sigbox');
+  for(var i=0;i<bx.length;i++){
+    var cv=bx[i].querySelector('canvas.sig');
+    var im=bx[i].querySelector('img.sigimg');
+    if(cv&&im&&cv.getAttribute('data-hay')==='1'){
+      try{ im.src=cv.toDataURL('image/png'); bx[i].className='sigbox firmado'; }catch(e){}
+    }
+  }
+  setTimeout(function(){ window.print(); },250);
+}
+if(!D||!D.r||!D.r.length){
+  document.getElementById('app').innerHTML='<div class="parte"><p><b>No se han recibido los datos del parte.</b></p><p>Abre el enlace completo que te han enviado por correo. Si el enlace aparece cortado en el mensaje, cópialo entero y pégalo en el navegador.</p></div>';
+}else{
+  document.getElementById('ti').textContent='Parte · '+(D.t||'')+' · '+fcorto(D.f);
+  var out='';
+  for(var i=0;i<D.r.length;i++){ out+=parte(D.r[i],i); }
+  document.getElementById('app').innerHTML=out;
+  var cs=document.querySelectorAll('canvas.sig');
+  for(var j=0;j<cs.length;j++){ firma(cs[j]); }
+}
+</script>
+</body>
+</html>
