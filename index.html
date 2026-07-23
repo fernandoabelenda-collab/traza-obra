@@ -3744,3 +3744,171 @@ render=function(){ if(view==='partes'){ renderNav(); if($('kpis')){ $('kpis').in
 A.render=render;
 })();
 </script>
+<script>
+/* TRAZA-OBRA · Produccion centrada + ausencias solo dias laborables */
+(function(){
+if(typeof S==='undefined'||!S){ setTimeout(arguments.callee,400); return; }
+if(window.__ajusteVistasListo) return; window.__ajusteVistasListo=true;
+var FEST={'2026-01-01':1,'2026-01-06':1,'2026-02-28':1,'2026-04-02':1,'2026-04-03':1,'2026-05-01':1,'2026-08-15':1,'2026-10-12':1,'2026-11-02':1,'2026-12-07':1,'2026-12-08':1,'2026-12-25':1};
+function esLaborable(iso,tec){
+  if(!iso) return false;
+  var dw=new Date(iso+'T12:00:00').getDay();
+  if(dw===0||dw===6) return false;
+  if(FEST[iso]) return false;
+  if(S.festLocal && S.festLocal[iso+'|'+tec]) return false;
+  return true;
+}
+function dm(iso){
+  var d=new Date(iso+'T12:00:00');
+  return String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0');
+}
+function rangoTxt(a,b){
+  if(a===b) return dm(a);
+  var x=new Date(a+'T12:00:00'), y=new Date(b+'T12:00:00');
+  if(x.getMonth()===y.getMonth() && x.getFullYear()===y.getFullYear()){
+    return String(x.getDate()).padStart(2,'0')+'-'+dm(b);
+  }
+  return dm(a)+'-'+dm(b);
+}
+function agrupaDias(lista,tec){
+  var out=[], ini=null, fin=null, n=0;
+  for(var i=0;i<lista.length;i++){
+    var d=lista[i];
+    if(ini===null){ ini=d; fin=d; n=1; continue; }
+    var p=addDays(fin,1), sigue=true, k=0;
+    while(p<d && k<15){
+      if(esLaborable(p,tec)){ sigue=false; break; }
+      p=addDays(p,1); k++;
+    }
+    if(sigue && p===d){ fin=d; n++; }
+    else { out.push({ini:ini,fin:fin,n:n}); ini=d; fin=d; n=1; }
+  }
+  if(ini!==null) out.push({ini:ini,fin:fin,n:n});
+  return out;
+}
+vTecnicos = function(){
+  var arr=filtra(enAmbito());
+  var tecs=[];
+  arr.forEach(function(l){ if(l.tecnico && tecs.indexOf(l.tecnico)<0) tecs.push(l.tecnico); });
+  tecs.sort();
+  var rows=tecs.map(function(t){
+    var m=arr.filter(function(l){ return l.tecnico===t; });
+    var p=m.filter(function(l){ return l.tipo==='PRODUCTIVO'; });
+    var cl=[];
+    p.forEach(function(l){ if(l.cliente && cl.indexOf(l.cliente)<0) cl.push(l.cliente); });
+    cl.sort();
+    var h=p.reduce(function(s,l){ return s+(l.horas||0); },0);
+    var au=m.filter(function(l){ return l.tipo!=='PRODUCTIVO'; });
+    return {t:t,n:m.length,h:h,cl:cl,au:au};
+  }).sort(function(a,b){ return b.h-a.h; });
+  var mx=1;
+  rows.forEach(function(r){ if(r.h>mx) mx=r.h; });
+  var filas=rows.map(function(r){
+    var porTipo={};
+    r.au.forEach(function(a){
+      if(!a.fecha) return;
+      if(!esLaborable(a.fecha,r.t)) return;
+      var tp=a.tipo||'-';
+      if(!porTipo[tp]) porTipo[tp]=[];
+      if(porTipo[tp].indexOf(a.fecha)<0) porTipo[tp].push(a.fecha);
+    });
+    var bl=[];
+    Object.keys(porTipo).forEach(function(tp){
+      porTipo[tp].sort();
+      agrupaDias(porTipo[tp],r.t).forEach(function(b){
+        bl.push({tipo:tp,ini:b.ini,fin:b.fin,n:b.n});
+      });
+    });
+    bl.sort(function(a,b){ return a.ini.localeCompare(b.ini); });
+    var aus = bl.length ? bl.map(function(b){
+      return '<span class="badge b-gray" style="margin-right:4px">'+esc(b.tipo)+' '+esc(rangoTxt(b.ini,b.fin))+' · '+b.n+' d</span>';
+    }).join('') : '<span class="dim">—</span>';
+    var cli = r.cl.length ? r.cl.map(function(c){
+      return '<span style="border-left:3px solid '+colorCli(c)+';padding-left:5px;margin-right:7px;font-size:11.5px">'+esc(c)+'</span>';
+    }).join('') : '<span class="dim">—</span>';
+    if(r.cl.length>1) cli+='<span class="badge b-warn">jornada partida</span>';
+    var barra='<div style="display:flex;align-items:center;gap:6px"><div class="bar" style="flex:1"><i style="width:'+(r.h/mx*100).toFixed(0)+'%"></i></div>'
+      +'<span class="mono" style="width:38px;text-align:right">'+nf(r.h,1)+'</span></div>';
+    return '<tr><td><b>'+esc(r.t)+'</b></td><td>'+barra+'</td>'
+      +'<td class="tar mono">'+r.n+'</td><td>'+cli+'</td><td>'+aus+'</td></tr>';
+  }).join('');
+  if(!rows.length) filas='<tr><td colspan="5"><div class="empty">Sin datos.</div></td></tr>';
+  var cab='<div class="phead"><div><h2>Carga por técnico</h2>'
+    +'<div class="sub">Horas imputadas y reparto de clientes. Las ausencias cuentan <b>solo días laborables</b> (sin sábados, domingos ni festivos).</div></div></div>';
+  var tabla='<div class="card"><table class="t"><thead><tr><th>Técnico</th><th style="width:160px">Horas</th>'
+    +'<th class="tar">Líneas</th><th>Clientes</th><th>No productivo</th></tr></thead><tbody>'+filas+'</tbody></table></div>';
+  $('main').innerHTML=cab+barraFecha()+barraFiltros()+tabla;
+};
+function vProd2(){
+  if(!puedoEditar()){
+    $('main').innerHTML='<div class="card"><div class="empty">Vista de uso interno de gestión (delegado y coordinación).</div></div>';
+    return;
+  }
+  var lineas=filtra(enAmbito());
+  var vistas={}, filas=[];
+  lineas.forEach(function(l){
+    if(vistas[l.fid]) return;
+    vistas[l.fid]=1;
+    var f=S.filas.filter(function(x){ return x.id===l.fid; })[0];
+    if(f) filas.push(f);
+  });
+  function nP(f){ return Number(f.prod)||0; }
+  function nE(f){ return Number(f.esti)||0; }
+  var totP=0, totE=0, nImp=0;
+  filas.forEach(function(f){ totP+=nP(f); totE+=nE(f); if(nP(f)>0||nE(f)>0) nImp++; });
+  var desv=totP-totE;
+  var pct = totE>0 ? Math.round(totP/totE*100) : null;
+  var byCli={};
+  filas.forEach(function(f){
+    var c=(f.cliente||'').trim()||'—';
+    if(!byCli[c]) byCli[c]={cliente:c,n:0,p:0,e:0};
+    if(nP(f)>0||nE(f)>0) byCli[c].n++;
+    byCli[c].p+=nP(f); byCli[c].e+=nE(f);
+  });
+  var rows=Object.keys(byCli).map(function(k){ return byCli[k]; })
+    .filter(function(o){ return o.p>0||o.e>0; })
+    .sort(function(a,b){ return b.p-a.p; });
+  var amb = (modo==='dia') ? fmtDia(dia) : (fmtCorto(rango.desde)+' → '+fmtCorto(rango.hasta));
+  function colD(d){ return d<0 ? 'var(--bad)' : (d>0 ? 'var(--ok)' : 'var(--dim)'); }
+  var C=' style="text-align:center"';
+  var cuerpo=rows.map(function(o){
+    var d=o.p-o.e;
+    return '<tr><td><b>'+esc(o.cliente)+'</b></td>'
+      +'<td class="mono"'+C+'>'+o.n+'</td>'
+      +'<td class="mono"'+C+'>'+nf(o.p,0)+'</td>'
+      +'<td class="mono"'+C+'>'+nf(o.e,0)+'</td>'
+      +'<td class="mono" style="text-align:center;color:'+colD(d)+'">'+(d>=0?'+':'')+nf(d,0)+'</td></tr>';
+  }).join('');
+  if(rows.length){
+    cuerpo+='<tr style="background:#F7F9FC;font-weight:700"><td>TOTAL</td>'
+      +'<td class="mono"'+C+'>'+nImp+'</td>'
+      +'<td class="mono"'+C+'>'+nf(totP,0)+'</td>'
+      +'<td class="mono"'+C+'>'+nf(totE,0)+'</td>'
+      +'<td class="mono"'+C+'>'+(desv>=0?'+':'')+nf(desv,0)+'</td></tr>';
+  } else {
+    cuerpo='<tr><td colspan="5"><div class="empty">Sin importes en este rango o filtro.</div></td></tr>';
+  }
+  var kpis='<div class="kpis" style="padding:0 0 11px">'
+    +'<div class="kpi g"><div class="k">Producción €</div><div class="v" style="font-size:19px;padding-top:3px">'+nf(totP,0)+' €</div><div class="s">'+esc(amb)+'</div></div>'
+    +'<div class="kpi a"><div class="k">Estimación €</div><div class="v" style="font-size:19px;padding-top:3px">'+nf(totE,0)+' €</div><div class="s">'+nImp+' trabajo(s) con importe</div></div>'
+    +'<div class="kpi '+(desv<0?'b':(desv>0?'g':''))+'"><div class="k">Desviación (Prod − Est)</div><div class="v" style="font-size:19px;padding-top:3px">'+(desv>=0?'+':'')+nf(desv,0)+' €</div>'
+    +'<div class="s">'+(pct!=null?(pct+'% de la estimación'):'sin estimación')+'</div></div></div>';
+  var cab='<div class="phead"><div><h2>Producción y estimación</h2>'
+    +'<div class="sub">Suma de <b>Producción €</b> y <b>Estimación €</b> del rango y filtros seleccionados. Cada una por separado.</div></div></div>';
+  var tabla='<div class="card"><div class="ch">Por cliente</div><table class="t"><thead><tr>'
+    +'<th>Cliente</th>'
+    +'<th'+C+'>Trabajos</th>'
+    +'<th'+C+'>Producción €</th>'
+    +'<th'+C+'>Estimación €</th>'
+    +'<th'+C+'>Desviación €</th></tr></thead><tbody>'+cuerpo+'</tbody></table></div>';
+  var pie='<div class="hint" style="margin-top:8px">Los importes salen de las columnas <b>Producción €</b> y <b>Estimación €</b> de la planificación. UNE-EN ISO/IEC 17020 §4.1.3: no deben influir en la aceptación o rechazo técnico.</div>';
+  $('main').innerHTML=cab+barraFecha()+barraFiltros()+kpis+tabla+pie;
+}
+var _rv=render;
+render=function(){
+  if(view==='produccion'){ renderNav(); if($('kpis')){ $('kpis').innerHTML=''; } vProd2(); return; }
+  return _rv.apply(this,arguments);
+};
+A.render=render;
+})();
+</script>
