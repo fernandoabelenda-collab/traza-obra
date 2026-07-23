@@ -2883,55 +2883,87 @@ A.render = render;
 })();
 </script>
 <script>
-/* ============================================================
-   BLOQUE · Parte v3 — TODAS las OT son principales (sep. " / ")
-   OT Secundaria en blanco. 100% ADITIVO. Sustituye la vista 'partes'.
-   ============================================================ */
+/* TRAZA-OBRA · Parte (OT todas principales) + Horas extra + correo hora inicio */
 (function(){
 if(typeof S==='undefined'||!S){ setTimeout(arguments.callee,400); return; }
-if(window.__partesV3Listo) return; window.__partesV3Listo=true;
-
-function htmlParteOCA_v3(f,tecnico){
-  const otTodas = splitOT(f.ot).join(' / ');          // todas principales
-  const otros=splitTecnicos(f.tecnicos).filter(t=>t!==tecnico).join(', ');
-  const inst=[f.centro,f.ubicacion].filter(Boolean).join(' · ');
-  const F=(l,v)=>`<div class="fld"><span class="lb">${esc(l)}:</span> <span class="vl">${esc(v||'')}</span></div>`;
-  return `<div class="parte">
-    <div class="hdr"><div class="ttl">REGISTRO DE PEDIDO ESPECÍFICO<br>ORDEN DE TRABAJO ENSAYOS NO DESTRUCTIVOS</div><div class="logo">OCA<span>GLOBAL</span></div></div>
-    <div class="grid2 top">${F('Número Pedido',f.pedido)}${F('Número OT',otTodas)}${F('Técnica Inspección',f.tecnica)}${F('Nº OT Principal',otTodas)}<div></div>${F('OT Secundaria nº','')}</div>
-    <div class="sec">DETALLES ADMINISTRACIÓN</div>
-    <div class="grid2">${F('Oferta','')}${F('Nº Cita Servicio','')}${F('Instalación',inst)}${F('Versión Oferta','')}${F('Solicitante',f.cliente)}${F('NIF/CIF','')}</div>
-    <div class="sec">DETALLES INSTALACIÓN ENSAYO</div>
-    <div class="grid2">${F('Titular','')}${F('Contacto','')}${F('Dirección','')}${F('Población','')}${F('Correo','')}${F('Teléfono','')}${F('Fecha Prevista Inicio',fmtCorto(f.fecha))}${F('Fecha Prevista Fin','')}</div>
-    <div class="sec">DETALLES INSPECCIÓN</div>
-    <div class="grid2">${F('Técnica Inspección',f.tecnica)}${F('Procedimiento Ensayo','')}${F('Norma Ensayo',f.codigo)}${F('Norma Evaluación','')}${F('Nivel de Ensayo','')}${F('Nivel Evaluación','')}${F('Alcance Unitario','')}${F('Trabajo Acreditado','')}${F('Inspector Asignado',tecnico)}${F('Núm Informe Múltiple','')}${F('Inspector Auxiliar',otros)}<div></div></div>
-    <div class="note">El inspector asignado dispondrá de los equipos y cualificaciones necesarias para la realización de los ensayos descritos en el presente documento según el procedimiento aplicable.</div>
-    <div class="sec">ALCANCE PREVISTO</div>
-    ${F('Referencia Cliente','')}
-    <div class="fld"><span class="lb">Descripción Trabajos:</span> <span class="vl">${esc(f.proyecto||'')}</span></div>
-    <div class="sec">FACTURACIÓN</div>
-    ${F('Fecha de Inspección',fmtCorto(f.fecha))}
-    <table class="fact"><thead><tr><th style="width:64px">CANTIDAD</th><th>CONCEPTO</th><th style="width:118px">ARTÍCULO COMERCIAL</th><th style="width:74px">IMPORTE</th></tr></thead>
-    <tbody><tr><td>&nbsp;</td><td></td><td></td><td></td></tr><tr><td></td><td></td><td></td><td></td></tr><tr><td></td><td></td><td></td><td></td></tr><tr><td></td><td></td><td></td><td></td></tr></tbody></table>
-    <div class="sec">OBSERVACIONES</div><div class="obs"></div>
-    <div class="firmas">
-      <div class="fma"><div class="ln"></div>Válido Ejecución Responsable Calidad de Zona</div>
-      <div class="fma"><div class="ln"></div>INSPECTOR OCA ICP</div>
-      <div class="fma"><div class="ln"></div>CLIENTE / REPRESENTANTE*</div>
-    </div>
-<script>
-<script>
-/* BLOQUE Horas extra v3 + correo hora inicio - version blindada */
-(function(){
-if(typeof S==='undefined'||!S){ setTimeout(arguments.callee,400); return; }
-if(window.__he3Listo) return; window.__he3Listo=true;
+if(window.__finalListo) return; window.__finalListo=true;
+function campo(l,v){ return '<div class="fld"><span class="lb">'+esc(l)+':</span> <span class="vl">'+esc(v||'')+'</span></div>'; }
+function parteHTML(f,tec){
+  var ot=splitOT(f.ot).join(' / ');
+  var aux=splitTecnicos(f.tecnicos).filter(function(x){ return x!==tec; }).join(', ');
+  var inst=[f.centro,f.ubicacion].filter(Boolean).join(' · ');
+  var h='<div class="parte">';
+  h+='<div class="hdr"><div class="ttl">REGISTRO DE PEDIDO ESPECÍFICO<br>ORDEN DE TRABAJO ENSAYOS NO DESTRUCTIVOS</div><div class="logo">OCA<span>GLOBAL</span></div></div>';
+  h+='<div class="grid2 top">'+campo('Número Pedido',f.pedido)+campo('Número OT',ot)+campo('Técnica Inspección',f.tecnica)+campo('Nº OT Principal',ot)+'<div></div>'+campo('OT Secundaria nº','')+'</div>';
+  h+='<div class="sec">DETALLES ADMINISTRACIÓN</div>';
+  h+='<div class="grid2">'+campo('Oferta','')+campo('Nº Cita Servicio','')+campo('Instalación',inst)+campo('Versión Oferta','')+campo('Solicitante',f.cliente)+campo('NIF/CIF','')+'</div>';
+  h+='<div class="sec">DETALLES INSTALACIÓN ENSAYO</div>';
+  h+='<div class="grid2">'+campo('Titular','')+campo('Contacto','')+campo('Dirección','')+campo('Población','')+campo('Correo','')+campo('Teléfono','')+campo('Fecha Prevista Inicio',fmtCorto(f.fecha))+campo('Fecha Prevista Fin','')+'</div>';
+  h+='<div class="sec">DETALLES INSPECCIÓN</div>';
+  h+='<div class="grid2">'+campo('Técnica Inspección',f.tecnica)+campo('Procedimiento Ensayo','')+campo('Norma Ensayo',f.codigo)+campo('Norma Evaluación','')+campo('Nivel de Ensayo','')+campo('Nivel Evaluación','')+campo('Alcance Unitario','')+campo('Trabajo Acreditado','')+campo('Inspector Asignado',tec)+campo('Núm Informe Múltiple','')+campo('Inspector Auxiliar',aux)+'<div></div></div>';
+  h+='<div class="note">El inspector asignado dispondrá de los equipos y cualificaciones necesarias para la realización de los ensayos descritos en el presente documento según el procedimiento aplicable.</div>';
+  h+='<div class="sec">ALCANCE PREVISTO</div>'+campo('Referencia Cliente','');
+  h+='<div class="fld"><span class="lb">Descripción Trabajos:</span> <span class="vl">'+esc(f.proyecto||'')+'</span></div>';
+  h+='<div class="sec">FACTURACIÓN</div>'+campo('Fecha de Inspección',fmtCorto(f.fecha));
+  h+='<table class="fact"><thead><tr><th style="width:64px">CANTIDAD</th><th>CONCEPTO</th><th style="width:118px">ARTÍCULO COMERCIAL</th><th style="width:74px">IMPORTE</th></tr></thead><tbody>';
+  for(var i=0;i<4;i++){ h+='<tr><td>&nbsp;</td><td></td><td></td><td></td></tr>'; }
+  h+='</tbody></table>';
+  h+='<div class="sec">OBSERVACIONES</div><div class="obs"></div>';
+  h+='<div class="firmas"><div class="fma"><div class="ln"></div>Válido Ejecución Responsable Calidad de Zona</div><div class="fma"><div class="ln"></div>INSPECTOR OCA ICP</div><div class="fma"><div class="ln"></div>CLIENTE / REPRESENTANTE*</div></div>';
+  h+='<div class="legal">* La firma del presente documento supone la aceptación de los datos contenidos en el mismo.<br>';
+  h+='*Atendiendo a la solicitud del cliente, o bien por estar fuera del alcance acreditado, los ensayos referidos en este pedido NO están cubiertos por la acreditación ENAC 400/LE875 ni por sus acuerdos internacionales de reconocimiento. Dicha circunstancia se hará constar en los informes de la inspección emitidos a raíz de los trabajos descritos.<br>';
+  h+='Este documento solo afecta a los componentes y partes sometidas a ensayo, identificadas en el mismo y en sus registros adjuntos de acuerdo a las referencias dadas por el cliente. Salvo indicación específica en contra, se emplearán las normas y procedimientos de ensayo en su última revisión aplicable según Manual de Calidad disponible para consulta. Salvo indicación específica en contra, no se prevén subcontrataciones parciales ni completas del alcance de este pedido.<br>';
+  h+='OCA Inspección Control y Prevención, SAU informa de que determinará la realización de sus inspecciones como laboratorio en función de las actuaciones realizadas sobre el ítem a inspeccionar, de acuerdo con su Política de Independencia e Imparcialidad. La firma de este documento comporta haber leído y aceptar las condiciones generales de contratación. Los datos personales facilitados se recogen con finalidades administrativas de la relación que nos vincula; puede ejercer sus derechos mediante escrito al Responsable o email a lopd@ocaglobal.com, asunto "Protección de Datos".</div>';
+  h+='<div class="foot">OCA INSPECCIÓN CONTROL Y PREVENCIÓN, S.A.U · Vía de las Dos Castillas, 7 · 28224 Pozuelo de Alarcón (Madrid) · ensayos@ocaglobal.com<br>Delegación comercial: Cádiz - EN · cadiz.ensayos@ocaglobal.com · www.ocaglobal.com · F.PG-16.7200.04 REV.03 08/25</div>';
+  h+='</div>';
+  return h;
+}
+function parteCSS(){
+  var c='';
+  c+='body{font:11px/1.35 Arial,Helvetica,sans-serif;color:#1a1a1a;margin:0;background:#fff}';
+  c+='.noprint{padding:10px;background:#eef2f7;border-bottom:1px solid #ccc;text-align:center}';
+  c+='.noprint button{padding:8px 18px;font-size:13px;background:#1F4E89;color:#fff;border:0;border-radius:6px;cursor:pointer}';
+  c+='.parte{max-width:800px;margin:0 auto;padding:14px 20px;page-break-after:always}';
+  c+='.parte:last-child{page-break-after:auto}';
+  c+='.hdr{display:flex;justify-content:space-between;align-items:flex-start;background:#1b2430;color:#fff;padding:11px 14px}';
+  c+='.hdr .ttl{font-weight:700;font-size:12px;line-height:1.3}';
+  c+='.hdr .logo{font-weight:800;font-size:19px;letter-spacing:1px;text-align:right}';
+  c+='.hdr .logo span{display:block;font-size:7px;letter-spacing:3px;font-weight:600}';
+  c+='.sec{color:#C0392B;font-weight:700;font-size:11.5px;margin:11px 0 4px;border-bottom:1px solid #eee;padding-bottom:2px}';
+  c+='.grid2{display:grid;grid-template-columns:1fr 1fr;gap:1px 24px}.top{margin-top:9px}';
+  c+='.fld{font-size:10.5px;padding:2px 0;border-bottom:1px dotted #e6e6e6}';
+  c+='.fld .lb{font-weight:700;color:#333}.fld .vl{color:#0b3a6b}';
+  c+='.note{font-size:9px;color:#555;margin:6px 0}';
+  c+='table.fact{width:100%;border-collapse:collapse;margin-top:4px;font-size:9.5px}';
+  c+='.fact th{background:#f2f2f2;border:1px solid #ccc;padding:4px;text-align:left;font-size:8.5px}';
+  c+='.fact td{border:1px solid #ccc;height:19px}';
+  c+='.obs{border:1px solid #ddd;min-height:58px;margin-top:4px}';
+  c+='.firmas{display:flex;gap:16px;margin-top:24px}';
+  c+='.firmas .fma{flex:1;font-size:8.5px;text-align:center;color:#333}';
+  c+='.firmas .ln{border-top:1px solid #333;margin-bottom:4px;height:32px}';
+  c+='.legal{font-size:7.3px;color:#555;margin-top:12px;line-height:1.3;text-align:justify}';
+  c+='.foot{font-size:8px;color:#333;text-align:center;margin-top:9px;border-top:1px solid #C0392B;padding-top:5px;font-weight:600}';
+  c+='@media print{.noprint{display:none}.parte{max-width:none;margin:0;padding:9mm}}';
+  return c;
+}
+A.generarPartes = function(tec){
+  var rows=S.filas.filter(function(f){ return f.fecha===dia && f.tipo==='PRODUCTIVO' && splitTecnicos(f.tecnicos).indexOf(tec)>=0; });
+  if(!rows.length){ toast('Ese técnico no tiene trabajos productivos ese día.'); return; }
+  var w=window.open('','_blank');
+  if(!w){ toast('El navegador bloqueó la ventana. Permite ventanas emergentes y reinténtalo.'); return; }
+  var d='<!DOCTYPE html><html lang="es"><head><meta charset="utf-8"><title>Parte '+esc(tec)+'</title><style>'+parteCSS()+'</style></head><body>';
+  d+='<div class="noprint"><button onclick="window.print()">Imprimir / Guardar como PDF</button> &nbsp; '+rows.length+' parte(s) · '+esc(tec)+' · '+esc(fmtCorto(dia))+'</div>';
+  d+=rows.map(function(f){ return parteHTML(f,tec); }).join('');
+  d+='</body></html>';
+  w.document.open(); w.document.write(d); w.document.close();
+};
 var FEST={'2026-01-01':'Año Nuevo','2026-01-06':'Reyes','2026-02-28':'Día de Andalucía','2026-04-02':'Jueves Santo','2026-04-03':'Viernes Santo','2026-05-01':'Fiesta del Trabajo','2026-08-15':'Asunción','2026-10-12':'Fiesta Nacional','2026-11-02':'Todos los Santos','2026-12-07':'Constitución','2026-12-08':'Inmaculada','2026-12-25':'Navidad'};
-function unionH(fr){ var iv=(fr||[]).filter(function(f){return f&&f.length===2&&f[1]>f[0];}).sort(function(a,b){return a[0]-b[0];}); if(!iv.length) return 0; var total=0,cA=iv[0][0],cB=iv[0][1]; for(var i=1;i<iv.length;i++){ var a=iv[i][0],b=iv[i][1]; if(a<=cB){ if(b>cB) cB=b; } else { total+=cB-cA; cA=a; cB=b; } } total+=cB-cA; return Math.round(total/60*100)/100; }
-function vHE3(){
+function unionH(fr){ var iv=(fr||[]).filter(function(f){ return f&&f.length===2&&f[1]>f[0]; }).sort(function(a,b){ return a[0]-b[0]; }); if(!iv.length) return 0; var total=0,cA=iv[0][0],cB=iv[0][1]; for(var i=1;i<iv.length;i++){ var a=iv[i][0],b=iv[i][1]; if(a<=cB){ if(b>cB){ cB=b; } } else { total+=cB-cA; cA=a; cB=b; } } total+=cB-cA; return Math.round(total/60*100)/100; }
+function vHE(){
   var lineas=filtra(enAmbito());
-  var festLocal=new Set(); S.filas.forEach(function(f){ if(f.tipo==='FESTIVO'&&f.fecha) festLocal.add(f.fecha); });
+  var festLocal={}; S.filas.forEach(function(f){ if(f.tipo==='FESTIVO'&&f.fecha) festLocal[f.fecha]=1; });
   function esFestNac(iso){ return FEST.hasOwnProperty(iso); }
-  function esFest(iso){ return esFestNac(iso)||festLocal.has(iso); }
+  function esFest(iso){ return esFestNac(iso)||festLocal.hasOwnProperty(iso); }
   var acc={};
   lineas.forEach(function(l){
     if(!l.tecnico) return;
@@ -2948,29 +2980,33 @@ function vHE3(){
     var dw=new Date(o.fecha+'T12:00:00').getDay();
     var finde=(dw===0||dw===6), festi=esFest(o.fecha);
     var exceso,motivo,clase;
-    if(finde||festi){ exceso=horas; motivo= festi?(esFestNac(o.fecha)?FEST[o.fecha]:'Festivo local'):(dw===6?'Sábado':'Domingo'); clase='b-pur'; }
+    if(finde||festi){ exceso=horas; motivo=festi?(esFestNac(o.fecha)?FEST[o.fecha]:'Festivo local'):(dw===6?'Sábado':'Domingo'); clase='b-pur'; }
     else { exceso=Math.round((horas-8)*100)/100; motivo='+8 h'; clase='b-warn'; }
     if(exceso>0) dias.push({tecnico:o.tecnico,fecha:o.fecha,horas:horas,horarios:o.horarios,exceso:exceso,motivo:motivo,clase:clase,finde:finde,festi:festi});
   });
   var porTec={};
-  dias.forEach(function(d){ var o=porTec[d.tecnico]||(porTec[d.tecnico]={tecnico:d.tecnico,dias:0,horas:0,he:0,ff:0}); o.dias++; o.horas+=d.exceso; if(d.finde||d.festi) o.ff+=d.exceso; else o.he+=d.exceso; });
-  var resumen=Object.keys(porTec).map(function(k){return porTec[k];}).sort(function(a,b){return b.horas-a.horas;});
-  var totalExceso=dias.reduce(function(t,d){return t+d.exceso;},0);
-  var totalFF=dias.filter(function(d){return d.finde||d.festi;}).reduce(function(t,d){return t+d.exceso;},0);
+  dias.forEach(function(d){ var o=porTec[d.tecnico]||(porTec[d.tecnico]={tecnico:d.tecnico,dias:0,horas:0,he:0,ff:0}); o.dias++; o.horas+=d.exceso; if(d.finde||d.festi){ o.ff+=d.exceso; } else { o.he+=d.exceso; } });
+  var resumen=Object.keys(porTec).map(function(k){ return porTec[k]; }).sort(function(a,b){ return b.horas-a.horas; });
+  var totalExceso=dias.reduce(function(t,d){ return t+d.exceso; },0);
+  var totalFF=dias.filter(function(d){ return d.finde||d.festi; }).reduce(function(t,d){ return t+d.exceso; },0);
   var totalHE=totalExceso-totalFF;
   dias.sort(function(a,b){ return b.fecha.localeCompare(a.fecha) || b.exceso-a.exceso; });
   var dow=['dom','lun','mar','mié','jue','vie','sáb'];
-  var filasRes=resumen.map(function(r){ return '<tr><td><b>'+esc(r.tecnico)+'</b></td><td class="tar mono">'+r.dias+'</td><td class="tar mono">'+(r.he>0?'+'+nf(r.he,1):'—')+'</td><td class="tar mono" style="color:var(--pur)">'+(r.ff>0?'+'+nf(r.ff,1):'—')+'</td><td class="tar mono" style="color:var(--warn);font-weight:700">+'+nf(r.horas,1)+'</td></tr>'; }).join('');
-  var filasDet=dias.map(function(d){ return '<tr><td class="mono">'+esc(fmtCorto(d.fecha))+' <span class="dim" style="font-size:10px">'+dow[new Date(d.fecha+'T12:00:00').getDay()]+'</span></td><td><span class="badge '+d.clase+'">'+esc(d.motivo)+'</span></td><td><b>'+esc(d.tecnico)+'</b></td><td class="tar mono">'+nf(d.horas,1)+'</td><td class="tar mono" style="color:var(--bad);font-weight:700">+'+nf(d.exceso,1)+'</td><td class="mono dim" style="font-size:11px">'+esc(d.horarios.join(' + ')||'—')+'</td></tr>'; }).join('');
-  var cuerpo = resumen.length ? ('<div class="card"><div class="ch">'+svg('clock')+' Resumen por técnico</div><table class="t"><thead><tr><th>Técnico</th><th class="tar">Días</th><th class="tar">Extra &gt;8h</th><th class="tar">Finde/festivo</th><th class="tar">Total</th></tr></thead><tbody>'+filasRes+'<tr style="background:#F7F9FC;font-weight:700"><td>TOTAL</td><td class="tar mono">'+dias.length+'</td><td class="tar mono">+'+nf(totalHE,1)+'</td><td class="tar mono">+'+nf(totalFF,1)+'</td><td class="tar mono">+'+nf(totalExceso,1)+'</td></tr></tbody></table></div><div class="card"><div class="ch">Detalle por día</div><table class="t"><thead><tr><th>Fecha</th><th>Motivo</th><th>Técnico</th><th class="tar">Horas día</th><th class="tar">Extra</th><th>Horario(s)</th></tr></thead><tbody>'+filasDet+'</tbody></table></div>') : '<div class="card"><div class="empty">Sin horas fuera de jornada en este periodo.</div></div>';
-  $('main').innerHTML='<div class="phead"><div><h2>Horas fuera de jornada</h2><div class="sub">Días laborables: lo que pase de <b>8 h</b>. Fin de semana y festivos: todas las horas. Varios servicios el mismo día no suman de más: cuenta el horario real.</div></div></div>'+barraFecha()+barraFiltros()+'<div class="kpis" style="padding:0 0 11px"><div class="kpi '+(totalExceso>0?'w':'g')+'"><div class="k">Total horas extra</div><div class="v">'+nf(totalExceso,1)+'</div><div class="s">'+dias.length+' día(s) con exceso</div></div><div class="kpi"><div class="k">Exceso &gt;8h (L-V)</div><div class="v">'+nf(totalHE,1)+'</div><div class="s">días laborables</div></div><div class="kpi b"><div class="k">Finde / festivo</div><div class="v">'+nf(totalFF,1)+'</div><div class="s">jornada completa</div></div><div class="kpi a"><div class="k">Técnicos afectados</div><div class="v">'+resumen.length+'</div><div class="s">en el periodo</div></div></div>'+cuerpo;
+  var fRes=resumen.map(function(r){ return '<tr><td><b>'+esc(r.tecnico)+'</b></td><td class="tar mono">'+r.dias+'</td><td class="tar mono">'+(r.he>0?'+'+nf(r.he,1):'—')+'</td><td class="tar mono" style="color:var(--pur)">'+(r.ff>0?'+'+nf(r.ff,1):'—')+'</td><td class="tar mono" style="color:var(--warn);font-weight:700">+'+nf(r.horas,1)+'</td></tr>'; }).join('');
+  var fDet=dias.map(function(d){ return '<tr><td class="mono">'+esc(fmtCorto(d.fecha))+' <span class="dim" style="font-size:10px">'+dow[new Date(d.fecha+'T12:00:00').getDay()]+'</span></td><td><span class="badge '+d.clase+'">'+esc(d.motivo)+'</span></td><td><b>'+esc(d.tecnico)+'</b></td><td class="tar mono">'+nf(d.horas,1)+'</td><td class="tar mono" style="color:var(--bad);font-weight:700">+'+nf(d.exceso,1)+'</td><td class="mono dim" style="font-size:11px">'+esc(d.horarios.join(' + ')||'—')+'</td></tr>'; }).join('');
+  var cuerpo = resumen.length ? ('<div class="card"><div class="ch">Resumen por técnico</div><table class="t"><thead><tr><th>Técnico</th><th class="tar">Días</th><th class="tar">Extra &gt;8h</th><th class="tar">Finde/festivo</th><th class="tar">Total</th></tr></thead><tbody>'+fRes+'<tr style="background:#F7F9FC;font-weight:700"><td>TOTAL</td><td class="tar mono">'+dias.length+'</td><td class="tar mono">+'+nf(totalHE,1)+'</td><td class="tar mono">+'+nf(totalFF,1)+'</td><td class="tar mono">+'+nf(totalExceso,1)+'</td></tr></tbody></table></div><div class="card"><div class="ch">Detalle por día</div><table class="t"><thead><tr><th>Fecha</th><th>Motivo</th><th>Técnico</th><th class="tar">Horas día</th><th class="tar">Extra</th><th>Horario(s)</th></tr></thead><tbody>'+fDet+'</tbody></table></div>') : '<div class="card"><div class="empty">Sin horas fuera de jornada en este periodo.</div></div>';
+  var kpis='<div class="kpis" style="padding:0 0 11px"><div class="kpi '+(totalExceso>0?'w':'g')+'"><div class="k">Total horas extra</div><div class="v">'+nf(totalExceso,1)+'</div><div class="s">'+dias.length+' día(s) con exceso</div></div><div class="kpi"><div class="k">Exceso &gt;8h (L-V)</div><div class="v">'+nf(totalHE,1)+'</div><div class="s">días laborables</div></div><div class="kpi b"><div class="k">Finde / festivo</div><div class="v">'+nf(totalFF,1)+'</div><div class="s">jornada completa</div></div><div class="kpi a"><div class="k">Técnicos afectados</div><div class="v">'+resumen.length+'</div><div class="s">en el periodo</div></div></div>';
+  var cab='<div class="phead"><div><h2>Horas fuera de jornada</h2><div class="sub">Días laborables: lo que pase de <b>8 h</b>. Fin de semana y festivos: todas las horas. Varios servicios el mismo día no suman de más: cuenta el horario real.</div></div></div>';
+  $('main').innerHTML=cab+barraFecha()+barraFiltros()+kpis+cuerpo;
 }
-(function(){ var _r=render; render=function(){ if(view==='horasfuera'){ renderNav(); if($('kpis'))$('kpis').innerHTML=''; vHE3(); return; } return _r.apply(this,arguments); }; A.render=render; })();
-function horaIni(horario){ var h=parseHorario(horario); if(h.franjas&&h.franjas.length){ var m=Math.min.apply(null,h.franjas.map(function(fr){return fr[0];})); return String(Math.floor(m/60)).padStart(2,'0')+':'+String(m%60).padStart(2,'0'); } var mm=/(\d{1,2})[:.h](\d{2})/.exec(horario||''); return mm?String(+mm[1]).padStart(2,'0')+':'+mm[2]:''; }
+var _r=render;
+render=function(){ if(view==='horasfuera'){ renderNav(); if($('kpis')){ $('kpis').innerHTML=''; } vHE(); return; } return _r.apply(this,arguments); };
+A.render=render;
+function horaIni(horario){ var h=parseHorario(horario); if(h.franjas&&h.franjas.length){ var m=Math.min.apply(null,h.franjas.map(function(fr){ return fr[0]; })); return String(Math.floor(m/60)).padStart(2,'0')+':'+String(m%60).padStart(2,'0'); } var mm=/(\d{1,2})[:.h](\d{2})/.exec(horario||''); return mm?String(+mm[1]).padStart(2,'0')+':'+mm[2]:''; }
 A.correoParte = function(t){
   var email=(S.correos&&S.correos.get(t))||'';
   function abrir(){
-    var rows=S.filas.filter(function(f){return f.fecha===dia && f.tipo==='PRODUCTIVO' && splitTecnicos(f.tecnicos).indexOf(t)>=0;});
+    var rows=S.filas.filter(function(f){ return f.fecha===dia && f.tipo==='PRODUCTIVO' && splitTecnicos(f.tecnicos).indexOf(t)>=0; });
     var porCli={}; rows.forEach(function(f){ var c=(f.cliente||'—'); (porCli[c]=porCli[c]||[]).push(horaIni(f.horario)); });
     var su='Parte de trabajo · '+fmtCorto(dia)+' · '+t;
     var L=['Hola '+t+',','','Te adjunto tu parte de trabajo para el '+fmtDia(dia)+'.','','Trabajos previstos y hora de inicio:'];
@@ -2978,7 +3014,13 @@ A.correoParte = function(t){
     L.push('','Por favor, firma el parte y devuélvelo respondiendo a este mismo correo (foto o escaneo).','','Gracias.','Delegación 1110 · Cádiz · OCA Global');
     window.open('https://mail.google.com/mail/?view=cm&fs=1&to='+encodeURIComponent(email)+'&su='+encodeURIComponent(su)+'&body='+encodeURIComponent(L.join('\n')),'_blank');
   }
-  if(!email){ var e=prompt('Aún no hay correo guardado para '+t+'.\nEscríbelo (se guardará para la próxima vez):',''); if(e===null) return; email=(e||'').trim(); if(!email){ toast('Sin correo no se puede abrir el envío.'); return; } if(puedoEditar()){ DB.guardarCorreo(t,email).then(function(){ S.correos.set(t,email); render(); abrir(); }).catch(function(err){ toast('No se pudo guardar el correo: '+esc(errTxt(err))); abrir(); }); return; } }
+  if(!email){
+    var e=prompt('Aún no hay correo guardado para '+t+'.\nEscríbelo (se guardará para la próxima vez):','');
+    if(e===null) return;
+    email=(e||'').trim();
+    if(!email){ toast('Sin correo no se puede abrir el envío.'); return; }
+    if(puedoEditar()){ DB.guardarCorreo(t,email).then(function(){ S.correos.set(t,email); render(); abrir(); }).catch(function(err){ toast('No se pudo guardar: '+esc(errTxt(err))); abrir(); }); return; }
+  }
   abrir();
 };
 })();
