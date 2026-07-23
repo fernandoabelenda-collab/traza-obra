@@ -3912,3 +3912,111 @@ render=function(){
 A.render=render;
 })();
 </script>
+<script>
+/* TRAZA-OBRA · Carga por tecnico: columna Dias + aviso de fechas repetidas */
+(function(){
+if(typeof S==='undefined'||!S){ setTimeout(arguments.callee,400); return; }
+if(window.__cargaDiasListo) return; window.__cargaDiasListo=true;
+var FEST={'2026-01-01':1,'2026-01-06':1,'2026-02-28':1,'2026-04-02':1,'2026-04-03':1,'2026-05-01':1,'2026-08-15':1,'2026-10-12':1,'2026-11-02':1,'2026-12-07':1,'2026-12-08':1,'2026-12-25':1};
+function esLab(iso,tec){
+  if(!iso) return false;
+  var dw=new Date(iso+'T12:00:00').getDay();
+  if(dw===0||dw===6) return false;
+  if(FEST[iso]) return false;
+  if(S.festLocal && S.festLocal[iso+'|'+tec]) return false;
+  return true;
+}
+function dm(iso){
+  var d=new Date(iso+'T12:00:00');
+  return String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0');
+}
+function rangoTxt(a,b){
+  if(a===b) return dm(a);
+  var x=new Date(a+'T12:00:00'), y=new Date(b+'T12:00:00');
+  if(x.getMonth()===y.getMonth() && x.getFullYear()===y.getFullYear()){
+    return String(x.getDate()).padStart(2,'0')+'-'+dm(b);
+  }
+  return dm(a)+'-'+dm(b);
+}
+function agrupa(lista,tec){
+  var out=[], ini=null, fin=null, n=0;
+  for(var i=0;i<lista.length;i++){
+    var d=lista[i];
+    if(ini===null){ ini=d; fin=d; n=1; continue; }
+    var p=addDays(fin,1), sigue=true, k=0;
+    while(p<d && k<15){
+      if(esLab(p,tec)){ sigue=false; break; }
+      p=addDays(p,1); k++;
+    }
+    if(sigue && p===d){ fin=d; n++; }
+    else { out.push({ini:ini,fin:fin,n:n}); ini=d; fin=d; n=1; }
+  }
+  if(ini!==null) out.push({ini:ini,fin:fin,n:n});
+  return out;
+}
+vTecnicos = function(){
+  var arr=filtra(enAmbito());
+  var tecs=[];
+  arr.forEach(function(l){ if(l.tecnico && tecs.indexOf(l.tecnico)<0) tecs.push(l.tecnico); });
+  tecs.sort();
+  var rows=tecs.map(function(t){
+    var m=arr.filter(function(l){ return l.tecnico===t; });
+    var p=m.filter(function(l){ return l.tipo==='PRODUCTIVO'; });
+    var cl=[];
+    p.forEach(function(l){ if(l.cliente && cl.indexOf(l.cliente)<0) cl.push(l.cliente); });
+    cl.sort();
+    var h=p.reduce(function(s,l){ return s+(l.horas||0); },0);
+    var au=m.filter(function(l){ return l.tipo!=='PRODUCTIVO'; });
+    return {t:t,n:m.length,nprod:p.length,h:h,cl:cl,au:au};
+  }).sort(function(a,b){ return b.h-a.h; });
+  var mx=1;
+  rows.forEach(function(r){ if(r.h>mx) mx=r.h; });
+  var filas=rows.map(function(r){
+    var porTipo={}, vistos={}, rep=0, fuera=0;
+    r.au.forEach(function(a){
+      if(!a.fecha) return;
+      var k=(a.tipo||'-')+'|'+a.fecha;
+      if(vistos[k]){ rep++; return; }
+      vistos[k]=1;
+      if(!esLab(a.fecha,r.t)){ fuera++; return; }
+      var tp=a.tipo||'-';
+      if(!porTipo[tp]) porTipo[tp]=[];
+      porTipo[tp].push(a.fecha);
+    });
+    var bl=[], totalD=0;
+    Object.keys(porTipo).forEach(function(tp){
+      porTipo[tp].sort();
+      agrupa(porTipo[tp],r.t).forEach(function(b){
+        bl.push({tipo:tp,ini:b.ini,fin:b.fin,n:b.n});
+        totalD+=b.n;
+      });
+    });
+    bl.sort(function(a,b){ return a.ini.localeCompare(b.ini); });
+    var aus = bl.length ? bl.map(function(b){
+      return '<span class="badge b-gray" style="margin-right:4px">'+esc(b.tipo)+' '+esc(rangoTxt(b.ini,b.fin))+' · '+b.n+' d</span>';
+    }).join('') : '<span class="dim">—</span>';
+    var notas='';
+    if(rep) notas+='<span class="badge b-bad" style="margin-right:4px" title="Hay filas repetidas del mismo día y tipo en la planificación">'+rep+' fecha(s) repetida(s)</span>';
+    if(fuera) notas+='<span class="badge b-warn" title="Días en sábado, domingo o festivo: no cuentan como laborables">'+fuera+' en festivo/finde</span>';
+    if(notas) aus+='<div style="margin-top:4px">'+notas+'</div>';
+    var cli = r.cl.length ? r.cl.map(function(c){
+      return '<span style="border-left:3px solid '+colorCli(c)+';padding-left:5px;margin-right:7px;font-size:11.5px">'+esc(c)+'</span>';
+    }).join('') : '<span class="dim">—</span>';
+    if(r.cl.length>1) cli+='<span class="badge b-warn">jornada partida</span>';
+    var barra='<div style="display:flex;align-items:center;gap:6px"><div class="bar" style="flex:1"><i style="width:'+(r.h/mx*100).toFixed(0)+'%"></i></div>'
+      +'<span class="mono" style="width:38px;text-align:right">'+nf(r.h,1)+'</span></div>';
+    return '<tr><td><b>'+esc(r.t)+'</b></td><td>'+barra+'</td>'
+      +'<td class="mono" style="text-align:center" title="Filas de planificación: '+r.nprod+' productivas + '+r.au.length+' no productivas">'+r.n+'</td>'
+      +'<td class="mono" style="text-align:center;font-weight:700">'+(totalD||'—')+'</td>'
+      +'<td>'+cli+'</td><td>'+aus+'</td></tr>';
+  }).join('');
+  if(!rows.length) filas='<tr><td colspan="6"><div class="empty">Sin datos.</div></td></tr>';
+  var cab='<div class="phead"><div><h2>Carga por técnico</h2>'
+    +'<div class="sub"><b>Líneas</b> = filas de planificación (productivas y no productivas). <b>Días</b> = días laborables de ausencia. Si no cuadran, es por fechas repetidas o por días en festivo/fin de semana: se avisa en la columna de la derecha.</div></div></div>';
+  var tabla='<div class="card"><table class="t"><thead><tr><th>Técnico</th><th style="width:160px">Horas</th>'
+    +'<th style="text-align:center">Líneas</th><th style="text-align:center">Días</th>'
+    +'<th>Clientes</th><th>No productivo</th></tr></thead><tbody>'+filas+'</tbody></table></div>';
+  $('main').innerHTML=cab+barraFecha()+barraFiltros()+tabla;
+};
+})();
+</script>
