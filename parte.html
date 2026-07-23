@@ -48,7 +48,7 @@ img.sigimg{width:100%;height:100%;object-fit:contain;display:none}
 .foot{font-size:8px;text-align:center;margin-top:9px;border-top:1px solid #C0392B;padding-top:5px;font-weight:600}
 @media(max-width:640px){.g2{grid-template-columns:1fr}.firmas{flex-direction:column}}
 body.pdfmode{background:#fff}
-body.pdfmode .bar,body.pdfmode .info,body.pdfmode .sigtools,body.pdfmode .ok{display:none!important}
+body.pdfmode .bar,body.pdfmode .info,body.pdfmode .sigtools,body.pdfmode .ok,body.pdfmode .wait{display:none!important}
 body.pdfmode .parte{box-shadow:none;margin:0 auto;padding:0;width:748px;max-width:748px;font-size:7.6pt;line-height:1.18;background:#fff}
 body.pdfmode .hdr{padding:5px 8px}
 body.pdfmode .hdr .ttl{font-size:8pt}
@@ -101,16 +101,17 @@ table.fact{font-size:7pt}
   <button class="b1" onclick="devolver()">Firmar y devolver</button>
   <button class="b2" onclick="descargar()">Descargar PDF</button>
 </div>
-<div class="info">Rellena lo que proceda, firma con el dedo y pulsa <b>Firmar y devolver</b>: se prepara el PDF y eliges tu correo. No se guarda nada en el móvil.</div>
+<div class="info">Firma con el dedo y pulsa <b>Firmar y devolver</b>. El PDF se adjunta solo al correo.</div>
 <div class="wait" id="wait"><div><div style="font-size:34px">⏳</div><div id="waitxt">Preparando el parte…</div></div></div>
 <div id="app"></div>
 <script src="https://cdn.jsdelivr.net/npm/html2pdf.js@0.10.2/dist/html2pdf.bundle.min.js"></script>
 <script>
-function esc(s){ return (s==null?'':String(s)).replace(/[&<>"']/g,function(c){ return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]; }); }
-function fcorto(iso){ if(!iso) return ''; var p=String(iso).slice(0,10).split('-'); if(p.length!==3) return String(iso); return p[2]+'/'+p[1]+'/'+p[0].slice(2); }
+function esc(s){return(s==null?'':String(s)).replace(/[&<>"']/g,function(c){return({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]});}
+function fcorto(iso){if(!iso)return'';var p=String(iso).slice(0,10).split('-');if(p.length!==3)return String(iso);return p[2]+'/'+p[1]+'/'+p[0].slice(2);}
 var D=null;
-try{ var hh=location.hash.slice(1); if(hh){ D=JSON.parse(decodeURIComponent(hh)); } }catch(e){ D=null; }
-function campo(l,v){ return '<div class="fld"><span class="lb">'+esc(l)+':</span> <span class="vl">'+esc(v||'')+'</span></div>'; }
+try{var hh=location.hash.slice(1);if(hh){D=JSON.parse(decodeURIComponent(hh));}}catch(e){D=null;}
+var REPLY=(D&&D.re)?D.re:'';
+function campo(l,v){return'<div class="fld"><span class="lb">'+esc(l)+':</span> <span class="vl">'+esc(v||'')+'</span></div>';}
 function parte(r,i){
   var h='<div class="parte">';
   h+='<div class="hdr"><div class="ttl">REGISTRO DE PEDIDO ESPECÍFICO<br>ORDEN DE TRABAJO ENSAYOS NO DESTRUCTIVOS</div><div class="logo">OCA<span>GLOBAL</span></div></div>';
@@ -126,7 +127,7 @@ function parte(r,i){
   h+='<div class="fld"><span class="lb">Descripción Trabajos:</span> <span class="vl">'+esc(r.x||'')+'</span></div>';
   h+='<div class="sec">FACTURACIÓN</div>'+campo('Fecha de Inspección',fcorto(D.f));
   h+='<table class="fact"><thead><tr><th style="width:64px">CANTIDAD</th><th>CONCEPTO</th><th style="width:110px">ARTÍCULO COMERCIAL</th><th style="width:74px">IMPORTE</th></tr></thead><tbody>';
-  for(var k=0;k<4;k++){ h+='<tr><td><div class="ed" contenteditable="true"></div></td><td><div class="ed" contenteditable="true"></div></td><td><div class="ed" contenteditable="true"></div></td><td><div class="ed" contenteditable="true"></div></td></tr>'; }
+  for(var k=0;k<4;k++){h+='<tr><td><div class="ed" contenteditable="true"></div></td><td><div class="ed" contenteditable="true"></div></td><td><div class="ed" contenteditable="true"></div></td><td><div class="ed" contenteditable="true"></div></td></tr>';}
   h+='</tbody></table>';
   h+='<div class="sec">OBSERVACIONES</div><div class="obs" contenteditable="true"></div>';
   h+='<div class="firmas">';
@@ -141,141 +142,54 @@ function parte(r,i){
   h+='<input class="nombre" type="text" value="" placeholder="Nombre y DNI del cliente"><div style="margin-top:3px">CLIENTE / REPRESENTANTE*</div></div>';
   h+='</div>';
   h+='<div class="legal">* La firma del presente documento supone la aceptación de los datos contenidos en el mismo.<br>';
-  h+='*Atendiendo a la solicitud del cliente, o bien por estar fuera del alcance acreditado, los ensayos referidos en este pedido NO están cubiertos por la acreditación ENAC 400/LE875 ni por sus acuerdos internacionales de reconocimiento. Dicha circunstancia se hará constar en los informes de la inspección emitidos a raíz de los trabajos descritos.<br>';
-  h+='Este documento solo afecta a los componentes y partes sometidas a ensayo, identificadas en el mismo y en sus registros adjuntos de acuerdo a las referencias dadas por el cliente. Salvo indicación específica en contra, se emplearán las normas y procedimientos de ensayo en su última revisión aplicable según Manual de Calidad disponible para consulta. Salvo indicación específica en contra, no se prevén subcontrataciones parciales ni completas del alcance de este pedido.<br>';
+  h+='*Atendiendo a la solicitud del cliente, o bien por estar fuera del alcance acreditado, los ensayos referidos en este pedido NO están cubiertos por la acreditación ENAC 400/LE875 ni por sus acuerdos internacionales de reconocimiento.<br>';
+  h+='Este documento solo afecta a los componentes y partes sometidas a ensayo, identificadas en el mismo y en sus registros adjuntos de acuerdo a las referencias dadas por el cliente. Salvo indicación específica en contra, se emplearán las normas y procedimientos de ensayo en su última revisión aplicable según Manual de Calidad disponible para consulta.<br>';
   h+='OCA Inspección Control y Prevención, SAU informa de que determinará la realización de sus inspecciones como laboratorio en función de las actuaciones realizadas sobre el ítem a inspeccionar, de acuerdo con su Política de Independencia e Imparcialidad. La firma de este documento comporta haber leído y aceptar las condiciones generales de contratación. Los datos personales facilitados se recogen con finalidades administrativas de la relación que nos vincula; puede ejercer sus derechos mediante escrito al Responsable o email a lopd@ocaglobal.com, asunto "Protección de Datos".</div>';
   h+='<div class="foot">OCA INSPECCIÓN CONTROL Y PREVENCIÓN, S.A.U · Vía de las Dos Castillas, 7 · 28224 Pozuelo de Alarcón (Madrid) · ensayos@ocaglobal.com<br>Delegación comercial: Cádiz - EN · cadiz.ensayos@ocaglobal.com · www.ocaglobal.com · F.PG-16.7200.04 REV.03 08/25</div>';
   h+='</div>';
   return h;
 }
-function ctxDe(cv){
-  var ctx=cv.getContext('2d');
-  var dpr=cv._dpr||1;
-  ctx.setTransform(dpr,0,0,dpr,0,0);
-  ctx.lineWidth=2.4; ctx.lineCap='round'; ctx.lineJoin='round'; ctx.strokeStyle='#0b2545';
-  return ctx;
-}
-function medir(cv,n){
-  var r=cv.getBoundingClientRect();
-  if((r.width<3||r.height<3) && (n||0)<40){ setTimeout(function(){ medir(cv,(n||0)+1); },120); return; }
-  var dpr=window.devicePixelRatio||1;
-  var nw=Math.round(r.width*dpr), nh=Math.round(r.height*dpr);
-  if(cv.width===nw && cv.height===nh) return;
-  var previo=null;
-  if(cv.getAttribute('data-hay')==='1'){ try{ previo=cv.toDataURL('image/png'); }catch(e){} }
-  cv.width=nw; cv.height=nh; cv._dpr=dpr;
-  var ctx=ctxDe(cv);
-  if(previo){ var im=new Image(); im.onload=function(){ ctx.drawImage(im,0,0,r.width,r.height); }; im.src=previo; }
-}
-function firma(cv){
-  medir(cv,0);
-  var dib=false,last=null;
-  function pos(e){ var r=cv.getBoundingClientRect(); return {x:e.clientX-r.left,y:e.clientY-r.top}; }
-  function ini(e){ e.preventDefault(); if(!cv.width||cv.width<3) medir(cv,0); dib=true; last=pos(e); try{ cv.setPointerCapture(e.pointerId); }catch(err){} }
-  function mov(e){
-    if(!dib) return;
-    e.preventDefault();
-    var p=pos(e), ctx=ctxDe(cv);
-    ctx.beginPath(); ctx.moveTo(last.x,last.y); ctx.lineTo(p.x,p.y); ctx.stroke();
-    last=p;
-    if(cv.getAttribute('data-hay')!=='1'){
-      cv.setAttribute('data-hay','1');
-      var ok=document.getElementById('ok'+cv.id.slice(2));
-      if(ok) ok.textContent='✓ Firmado';
-    }
-  }
-  function fin(e){ dib=false; try{ cv.releasePointerCapture(e.pointerId); }catch(err){} }
-  cv.addEventListener('pointerdown',ini);
-  cv.addEventListener('pointermove',mov);
-  cv.addEventListener('pointerup',fin);
-  cv.addEventListener('pointercancel',fin);
-  cv.addEventListener('pointerleave',function(){ dib=false; });
-}
-function borrar(id){
-  var cv=document.getElementById(id); if(!cv) return;
-  var box=cv.parentNode; if(box) box.className='sigbox';
-  var ctx=cv.getContext('2d');
-  ctx.save(); ctx.setTransform(1,0,0,1,0,0); ctx.clearRect(0,0,cv.width,cv.height); ctx.restore();
-  cv.setAttribute('data-hay','');
-  var ok=document.getElementById('ok'+id.slice(2));
-  if(ok) ok.textContent='';
-  medir(cv,0);
-}
-function espera(on,txt){
-  var w=document.getElementById('wait');
-  if(txt) document.getElementById('waitxt').textContent=txt;
-  if(on) w.className='wait on'; else w.className='wait';
-}
-function fijarFirmas(cb){
-  var cvs=document.querySelectorAll('canvas.sig');
-  var pend=[], hay=0;
-  for(var i=0;i<cvs.length;i++){
-    var cv=cvs[i];
-    if(cv.getAttribute('data-hay')!=='1') continue;
-    hay++;
-    var box=cv.parentNode, im=box.querySelector('img.sigimg'), dato=null;
-    try{ dato=cv.toDataURL('image/png'); }catch(e){ dato=null; }
-    if(dato&&im) pend.push({im:im,box:box,dato:dato});
-  }
-  if(!pend.length){ cb(hay); return; }
-  var faltan=pend.length, lanzado=false;
-  function fin(){ if(lanzado) return; lanzado=true; cb(hay); }
-  var guarda=setTimeout(fin,3000);
-  pend.forEach(function(p){
-    p.im.onload=function(){ p.box.className='sigbox firmado'; faltan--; if(faltan<=0){ clearTimeout(guarda); fin(); } };
-    p.im.onerror=function(){ faltan--; if(faltan<=0){ clearTimeout(guarda); fin(); } };
-    p.im.src=p.dato;
-  });
-}
-function nombrePDF(){
-  var t=(D&&D.t?D.t:'parte').replace(/[^A-Za-z0-9ÁÉÍÓÚÑáéíóúñ ]/g,'').replace(/\s+/g,'_');
-  var f=(D&&D.f?D.f:'').replace(/-/g,'');
-  return 'Parte_'+t+'_'+f+'.pdf';
-}
+function ctxDe(cv){var ctx=cv.getContext('2d');var dpr=cv._dpr||1;ctx.setTransform(dpr,0,0,dpr,0,0);ctx.lineWidth=2.4;ctx.lineCap='round';ctx.lineJoin='round';ctx.strokeStyle='#0b2545';return ctx;}
+function medir(cv,n){var r=cv.getBoundingClientRect();if((r.width<3||r.height<3)&&(n||0)<40){setTimeout(function(){medir(cv,(n||0)+1);},120);return;}var dpr=window.devicePixelRatio||1;var nw=Math.round(r.width*dpr),nh=Math.round(r.height*dpr);if(cv.width===nw&&cv.height===nh)return;var previo=null;if(cv.getAttribute('data-hay')==='1'){try{previo=cv.toDataURL('image/png');}catch(e){}}cv.width=nw;cv.height=nh;cv._dpr=dpr;var ctx=ctxDe(cv);if(previo){var im=new Image();im.onload=function(){ctx.drawImage(im,0,0,r.width,r.height);};im.src=previo;}}
+function firma(cv){medir(cv,0);var dib=false,last=null;function pos(e){var r=cv.getBoundingClientRect();return{x:e.clientX-r.left,y:e.clientY-r.top};}function ini(e){e.preventDefault();if(!cv.width||cv.width<3)medir(cv,0);dib=true;last=pos(e);try{cv.setPointerCapture(e.pointerId);}catch(err){}}function mov(e){if(!dib)return;e.preventDefault();var p=pos(e),ctx=ctxDe(cv);ctx.beginPath();ctx.moveTo(last.x,last.y);ctx.lineTo(p.x,p.y);ctx.stroke();last=p;if(cv.getAttribute('data-hay')!=='1'){cv.setAttribute('data-hay','1');var ok=document.getElementById('ok'+cv.id.slice(2));if(ok)ok.textContent='✓ Firmado';}}function fin(e){dib=false;try{cv.releasePointerCapture(e.pointerId);}catch(err){}}cv.addEventListener('pointerdown',ini);cv.addEventListener('pointermove',mov);cv.addEventListener('pointerup',fin);cv.addEventListener('pointercancel',fin);cv.addEventListener('pointerleave',function(){dib=false;});}
+function borrar(id){var cv=document.getElementById(id);if(!cv)return;var box=cv.parentNode;if(box)box.className='sigbox';var ctx=cv.getContext('2d');ctx.save();ctx.setTransform(1,0,0,1,0,0);ctx.clearRect(0,0,cv.width,cv.height);ctx.restore();cv.setAttribute('data-hay','');var ok=document.getElementById('ok'+id.slice(2));if(ok)ok.textContent='';medir(cv,0);}
+function espera(on,txt){var w=document.getElementById('wait');if(txt)document.getElementById('waitxt').textContent=txt;w.className=on?'wait on':'wait';}
+function fijarFirmas(cb){var cvs=document.querySelectorAll('canvas.sig');var pend=[],hay=0;for(var i=0;i<cvs.length;i++){var cv=cvs[i];if(cv.getAttribute('data-hay')!=='1')continue;hay++;var box=cv.parentNode,im=box.querySelector('img.sigimg'),dato=null;try{dato=cv.toDataURL('image/png');}catch(e){}if(dato&&im)pend.push({im:im,box:box,dato:dato});}if(!pend.length){cb(hay);return;}var faltan=pend.length,lanzado=false;function fin(){if(lanzado)return;lanzado=true;cb(hay);}var guarda=setTimeout(fin,3000);pend.forEach(function(p){p.im.onload=function(){p.box.className='sigbox firmado';faltan--;if(faltan<=0){clearTimeout(guarda);fin();}};p.im.onerror=function(){faltan--;if(faltan<=0){clearTimeout(guarda);fin();}};p.im.src=p.dato;});}
+function nombrePDF(){var t=(D&&D.t?D.t:'parte').replace(/[^A-Za-z0-9ÁÉÍÓÚÑáéíóúñ ]/g,'').replace(/\s+/g,'_');var f=(D&&D.f?D.f:'').replace(/-/g,'');return'Parte_'+t+'_'+f+'.pdf';}
 function hacerPDF(cb){
-  if(typeof html2pdf==='undefined'){
-    espera(false);
-    if(confirm('No se ha podido preparar el PDF (parece que no hay conexión).\n\n¿Quieres usar la opción de imprimir del móvil?')) window.print();
-    return;
-  }
+  if(typeof html2pdf==='undefined'){espera(false);alert('No se ha podido cargar la herramienta de PDF. Comprueba tu conexión a internet.');return;}
   document.body.classList.add('pdfmode');
-  var opt={
-    margin:[6,6,6,6],
-    filename:nombrePDF(),
-    image:{type:'jpeg',quality:0.94},
-    html2canvas:{scale:2,useCORS:true,backgroundColor:'#ffffff',scrollY:0},
-    jsPDF:{unit:'mm',format:'a4',orientation:'portrait'},
-    pagebreak:{mode:['css','legacy'],after:'.parte'}
-  };
-  setTimeout(function(){
-    html2pdf().set(opt).from(document.getElementById('app')).outputPdf('blob').then(function(blob){
-      document.body.classList.remove('pdfmode');
-      espera(false);
-      cb(blob);
-    }).catch(function(err){
-      document.body.classList.remove('pdfmode');
-      espera(false);
-      if(confirm('No se ha podido generar el PDF.\n\n¿Quieres usar la opción de imprimir del móvil?')) window.print();
+  var opt={margin:[6,6,6,6],filename:nombrePDF(),image:{type:'jpeg',quality:0.94},html2canvas:{scale:2,useCORS:true,backgroundColor:'#ffffff',scrollY:0},jsPDF:{unit:'mm',format:'a4',orientation:'portrait'},pagebreak:{mode:['css','legacy'],after:'.parte'}};
+  setTimeout(function(){html2pdf().set(opt).from(document.getElementById('app')).outputPdf('blob').then(function(blob){document.body.classList.remove('pdfmode');espera(false);cb(blob);}).catch(function(){document.body.classList.remove('pdfmode');espera(false);alert('Error al generar el PDF.');});},300);
+}
+function intentarCompartir(blob,nom,asunto){
+  var file=null;
+  try{file=new File([blob],nom,{type:'application/pdf'});}catch(e){file=null;}
+  if(file&&navigator.canShare&&navigator.canShare({files:[file]})){
+    navigator.share({files:[file],title:asunto,text:asunto}).then(function(){}).catch(function(err){
+      if(err.name!=='AbortError'){fallbackGmail(blob,nom,asunto);}
     });
-  },250);
+  } else { fallbackGmail(blob,nom,asunto); }
+}
+function fallbackGmail(blob,nom,asunto){
+  var u=URL.createObjectURL(blob),a=document.createElement('a');
+  a.href=u;a.download=nom;a.click();
+  setTimeout(function(){URL.revokeObjectURL(u);},4000);
+  setTimeout(function(){
+    var dest=encodeURIComponent(REPLY);
+    var su=encodeURIComponent(asunto);
+    var body=encodeURIComponent('Adjunto el parte de trabajo firmado.\n\nSaludos.');
+    window.open('https://mail.google.com/mail/?view=cm&fs=1&to='+dest+'&su='+su+'&body='+body,'_blank');
+  },800);
 }
 function devolver(){
   fijarFirmas(function(hay){
-    if(!hay && !confirm('No has firmado ningún recuadro.\n\n¿Devolver el parte igualmente?')) return;
-    espera(true,'Preparando el parte… unos segundos');
+    if(!hay&&!confirm('No has firmado ningún recuadro.\n\n¿Devolver el parte igualmente?'))return;
+    espera(true,'Preparando el parte firmado…');
     hacerPDF(function(blob){
       var nom=nombrePDF();
-      var file=null;
-      try{ file=new File([blob],nom,{type:'application/pdf'}); }catch(e){ file=null; }
       var asunto='Parte de trabajo firmado · '+fcorto(D.f)+' · '+(D.t||'');
-      if(file && navigator.canShare && navigator.canShare({files:[file]}) && navigator.share){
-        navigator.share({files:[file],title:asunto,text:asunto}).catch(function(){});
-      } else {
-        alert('Tu navegador no permite enviar directamente.\n\nSe va a descargar el PDF para que lo adjuntes al correo.');
-        var u=URL.createObjectURL(blob), a=document.createElement('a');
-        a.href=u; a.download=nom; a.click();
-        setTimeout(function(){ URL.revokeObjectURL(u); },4000);
-      }
+      intentarCompartir(blob,nom,asunto);
     });
   });
 }
@@ -283,9 +197,9 @@ function descargar(){
   fijarFirmas(function(){
     espera(true,'Preparando el PDF…');
     hacerPDF(function(blob){
-      var u=URL.createObjectURL(blob), a=document.createElement('a');
-      a.href=u; a.download=nombrePDF(); a.click();
-      setTimeout(function(){ URL.revokeObjectURL(u); },4000);
+      var u=URL.createObjectURL(blob),a=document.createElement('a');
+      a.href=u;a.download=nombrePDF();a.click();
+      setTimeout(function(){URL.revokeObjectURL(u);},4000);
     });
   });
 }
@@ -294,13 +208,11 @@ if(!D||!D.r||!D.r.length){
 }else{
   document.getElementById('ti').textContent='Parte · '+(D.t||'')+' · '+fcorto(D.f);
   var out='';
-  for(var i=0;i<D.r.length;i++){ out+=parte(D.r[i],i); }
+  for(var i=0;i<D.r.length;i++){out+=parte(D.r[i],i);}
   document.getElementById('app').innerHTML=out;
   var cs=document.querySelectorAll('canvas.sig');
-  for(var j=0;j<cs.length;j++){ firma(cs[j]); }
-  window.addEventListener('orientationchange',function(){
-    setTimeout(function(){ var c=document.querySelectorAll('canvas.sig'); for(var k=0;k<c.length;k++){ medir(c[k],0); } },300);
-  });
+  for(var j=0;j<cs.length;j++){firma(cs[j]);}
+  window.addEventListener('orientationchange',function(){setTimeout(function(){var c=document.querySelectorAll('canvas.sig');for(var k=0;k<c.length;k++){medir(c[k],0);}},300);});
 }
 </script>
 </body>
