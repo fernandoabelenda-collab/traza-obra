@@ -3343,3 +3343,252 @@ A.correoParte = function(t){
 };
 })();
 </script>
+<script>
+/* TRAZA-OBRA · Partes: seleccion multiple, cola de envio, registro y aviso 15:30 */
+(function(){
+if(typeof S==='undefined'||!S){ setTimeout(arguments.callee,400); return; }
+if(window.__envioMultListo) return; window.__envioMultListo=true;
+S.partesEnviados = S.partesEnviados || {};
+var SELP = {};
+var COLA = [], COLAI = 0;
+var AVISADO = {};
+DB.loadPartesEnviados = function(){
+  return SB.from('parte_enviado').select('fecha,tecnico,email,via,enviado_por,enviado_en').then(function(r){
+    if(r.error) throw r.error;
+    var o={};
+    (r.data||[]).forEach(function(x){ o[x.fecha+'|'+x.tecnico]={por:x.enviado_por,en:x.enviado_en,via:x.via}; });
+    return o;
+  });
+};
+DB.marcarEnviado = function(fecha,tec,email,via){
+  var reg={fecha:fecha,tecnico:tec,email:email||null,via:via||'manual',enviado_por:YO.nombre||null};
+  return SB.from('parte_enviado').insert(reg).then(function(r){
+    if(r.error && !/duplicate key/i.test(r.error.message||'')) throw r.error;
+    S.partesEnviados[fecha+'|'+tec]={por:YO.nombre,en:new Date().toISOString(),via:via||'manual'};
+  });
+};
+DB.quitarEnviado = function(fecha,tec){
+  return SB.from('parte_enviado').delete().eq('fecha',fecha).eq('tecnico',tec).then(function(r){
+    if(r.error) throw r.error;
+    delete S.partesEnviados[fecha+'|'+tec];
+  });
+};
+function iniHora(horario){
+  var h=parseHorario(horario);
+  if(h.franjas&&h.franjas.length){
+    var m=Math.min.apply(null,h.franjas.map(function(fr){ return fr[0]; }));
+    return String(Math.floor(m/60)).padStart(2,'0')+':'+String(m%60).padStart(2,'0');
+  }
+  var mm=/(\d{1,2})[:.h](\d{2})/.exec(horario||'');
+  return mm?String(+mm[1]).padStart(2,'0')+':'+mm[2]:'';
+}
+function filasDe(t,f){
+  var rows=S.filas.filter(function(x){
+    return x.fecha===f && x.tipo==='PRODUCTIVO' && splitTecnicos(x.tecnicos).indexOf(t)>=0;
+  });
+  rows.sort(function(a,b){
+    var p=iniHora(a.horario)||'99:99', q=iniHora(b.horario)||'99:99';
+    return p.localeCompare(q);
+  });
+  return rows;
+}
+function tecnicosDe(f){
+  var m={};
+  S.filas.forEach(function(x){
+    if(x.fecha!==f || x.tipo!=='PRODUCTIVO') return;
+    splitTecnicos(x.tecnicos).forEach(function(t){ if(t) m[t]=1; });
+  });
+  return Object.keys(m).sort();
+}
+function enlaceFirma(t,f,rows){
+  var arr=rows.map(function(x){
+    return { o:splitOT(x.ot).join(' / '), p:x.pedido||'', t:x.tecnica||'', i:x.centro||'',
+      d:x.ubicacion||'', s:x.cliente||'', n:x.codigo||'', x:x.proyecto||'',
+      a:splitTecnicos(x.tecnicos).filter(function(z){ return z!==t; }).join(', ') };
+  });
+  var base=location.origin+location.pathname.replace(/[^/]*$/,'')+'parte.html';
+  return base+'#'+encodeURIComponent(JSON.stringify({t:t,f:f,r:arr}));
+}
+function cuerpoCorreo(t,f,rows){
+  var L=['Hola '+t+',','','Este es tu parte de trabajo para el '+fmtDia(f)+'.','','Trabajos previstos y hora de inicio:'];
+  rows.forEach(function(x){
+    var p=[(x.cliente||'-')];
+    if(x.centro) p.push(x.centro);
+    if(x.ubicacion) p.push(x.ubicacion);
+    if(x.tecnica) p.push(x.tecnica);
+    var ini=iniHora(x.horario);
+    L.push('. '+p.join(' . ')+(ini?' - inicio '+ini+' h':''));
+  });
+  L.push('');
+  L.push('ABRIR Y FIRMAR EL PARTE DESDE EL MOVIL:');
+  L.push(enlaceFirma(t,f,rows));
+  L.push('');
+  L.push('Abre el enlace, rellena observaciones si procede, firma con el dedo (inspector y, si procede, cliente) y pulsa "Firmar y guardar PDF".');
+  L.push('Despues responde a este mismo correo adjuntando el PDF firmado.');
+  L.push('');
+  L.push('Gracias.');
+  L.push('Delegacion 1110 . Cadiz . OCA Global');
+  return L.join('\n');
+}
+function abrirGmail(t,f){
+  var rows=filasDe(t,f);
+  if(!rows.length) return false;
+  var email=(S.correos&&S.correos.get(t))||'';
+  var su='Parte de trabajo · '+fmtCorto(f)+' · '+t;
+  var url='https://mail.google.com/mail/?view=cm&fs=1&to='+encodeURIComponent(email)+'&su='+encodeURIComponent(su)+'&body='+encodeURIComponent(cuerpoCorreo(t,f,rows));
+  window.open(url,'_blank');
+  return true;
+}
+A.selPar = function(t){ if(SELP[t]) delete SELP[t]; else SELP[t]=1; render(); };
+A.selTodos = function(modo){
+  var f=dia, tecs=tecnicosDe(f);
+  SELP={};
+  tecs.forEach(function(t){
+    if(modo==='todos') SELP[t]=1;
+    else if(modo==='pend' && !S.partesEnviados[f+'|'+t]) SELP[t]=1;
+  });
+  render();
+};
+A.colaEnviar = function(){
+  var f=dia, sel=Object.keys(SELP);
+  if(!sel.length){ toast('No has seleccionado ningún técnico.'); return; }
+  COLA=sel.filter(function(t){ return filasDe(t,f).length; }).sort();
+  if(!COLA.length){ toast('Los seleccionados no tienen trabajo productivo ese día.'); return; }
+  COLAI=0; A.colaPaso();
+};
+A.colaPaso = function(){
+  var f=dia;
+  if(COLAI>=COLA.length){
+    closeModal(); SELP={}; render();
+    toast('Cola terminada: '+COLA.length+' parte(s) procesados.');
+    return;
+  }
+  var t=COLA[COLAI];
+  var email=(S.correos&&S.correos.get(t))||'';
+  var rows=filasDe(t,f);
+  var ya=S.partesEnviados[f+'|'+t];
+  var h='<h3>Enviar partes · '+esc(fmtCorto(f))+'</h3><div class="mbody">';
+  h+='<div class="alert i">Parte <b>'+(COLAI+1)+' de '+COLA.length+'</b></div>';
+  h+='<div class="card"><div class="cb"><div style="font-size:16px;font-weight:700">'+esc(t)+'</div>';
+  h+='<div class="dim" style="font-size:11.5px;margin-top:3px">'+(email?esc(email):'<b style="color:var(--bad)">sin correo guardado</b>')+'</div>';
+  h+='<div style="margin-top:7px">'+rows.map(function(x){
+    var ini=iniHora(x.horario);
+    return '<div class="dim" style="font-size:11.5px">OT <b class="mono">'+esc(splitOT(x.ot).join(' / ')||'-')+'</b> · '+esc(x.cliente||'-')+(ini?' · inicio '+esc(ini)+' h':'')+'</div>';
+  }).join('')+'</div>';
+  if(ya) h+='<div class="alert w" style="margin-top:8px">Ya se envió el '+esc(fmtCorto(String(ya.en).slice(0,10)))+' por '+esc(ya.por||'-')+'.</div>';
+  h+='</div></div></div>';
+  h+='<div class="mfoot"><button class="btn" onclick="A.colaCancelar()">Cerrar</button>';
+  h+='<button class="btn" onclick="A.colaSaltar()">Saltar</button>';
+  h+='<button class="btn pri" onclick="A.colaAbrir()">Abrir Gmail y marcar enviado</button></div>';
+  openModal(h);
+};
+A.colaAbrir = function(){
+  var f=dia, t=COLA[COLAI];
+  var email=(S.correos&&S.correos.get(t))||'';
+  if(!email){
+    var e=prompt('Falta el correo de '+t+'. Escríbelo (se guardará):','');
+    if(e===null) return;
+    email=(e||'').trim();
+    if(!email){ toast('Sin correo no se puede enviar.'); return; }
+    DB.guardarCorreo(t,email).then(function(){ S.correos.set(t,email); A.colaAbrir(); }).catch(function(err){ toast('No se pudo guardar: '+esc(errTxt(err))); });
+    return;
+  }
+  abrirGmail(t,f);
+  DB.marcarEnviado(f,t,email,'manual').then(function(){ COLAI++; A.colaPaso(); })
+    .catch(function(err){ toast('Enviado, pero no se registró: '+esc(errTxt(err))); COLAI++; A.colaPaso(); });
+};
+A.colaSaltar = function(){ COLAI++; A.colaPaso(); };
+A.colaCancelar = function(){ closeModal(); render(); };
+A.quitarEnvio = function(t){
+  if(!puedoEditar()){ toast('Tu rol es de solo consulta.'); return; }
+  DB.quitarEnviado(dia,t).then(function(){ render(); toast('Marca de envío quitada.'); })
+    .catch(function(e){ toast('No se pudo: '+esc(errTxt(e))); });
+};
+function vPartesM(){
+  var f=dia, puede=puedoEditar();
+  var tecs=tecnicosDe(f);
+  var nSel=Object.keys(SELP).length;
+  var nEnv=tecs.filter(function(t){ return S.partesEnviados[f+'|'+t]; }).length;
+  var filas=tecs.map(function(t){
+    var rows=filasDe(t,f);
+    var env=S.partesEnviados[f+'|'+t];
+    var mail=(S.correos&&S.correos.get(t))||'';
+    var rec=S.partesRecibidos?S.partesRecibidos.get(f+'|'+t):null;
+    var trab=rows.map(function(x){
+      var ini=iniHora(x.horario);
+      return '<div class="dim" style="font-size:11.5px">OT <b class="mono">'+esc(splitOT(x.ot).join(' / ')||'-')+'</b> · '+esc(x.cliente||'-')+' · '+esc(x.tecnica||'-')+(ini?' · <b>'+esc(ini)+'</b>':'')+'</div>';
+    }).join('');
+    var chk='<input type="checkbox" '+(SELP[t]?'checked':'')+' onclick="A.selPar(\''+esc(t)+'\')">';
+    var estado = env
+      ? '<span class="badge b-ok">✓ Enviado</span><br><span class="dim" style="font-size:10px">'+esc(env.por||'')+'</span>'
+      : '<span class="badge b-gray">Pendiente</span>';
+    var acc='<button class="btn sm pri" onclick="A.generarPartes(\''+esc(t)+'\')">Parte</button> ';
+    acc+='<button class="btn sm" onclick="A.correoParte(\''+esc(t)+'\')">Correo</button> ';
+    if(puede && env) acc+='<button class="btn sm" onclick="A.quitarEnvio(\''+esc(t)+'\')">Quitar envío</button> ';
+    if(puede) acc+=(rec?'<button class="btn sm" onclick="A.quitarRecibidoParte(\''+esc(t)+'\')">Quitar recibido</button>':'<button class="btn sm" onclick="A.marcarRecibidoParte(\''+esc(t)+'\')">Recibido</button>');
+    return '<tr><td class="tac">'+chk+'</td><td><b>'+esc(t)+'</b><br><span class="dim" style="font-size:10.5px">'+(mail?esc(mail):'sin correo')+'</span></td>'
+      +'<td>'+trab+'</td><td>'+estado+'</td>'
+      +'<td>'+(rec?'<span class="badge b-ok">✓</span>':'<span class="dim">—</span>')+'</td>'
+      +'<td class="tar" style="white-space:nowrap">'+acc+'</td></tr>';
+  }).join('');
+  if(!tecs.length) filas='<tr><td colspan="6"><div class="empty">Sin trabajos productivos planificados este día.</div></td></tr>';
+  var cab='<div class="phead"><div><h2>Partes de trabajo</h2><div class="sub">Solo trabajo <b>PRODUCTIVO</b>. Marca varios técnicos y envía en cadena. Un parte por técnico y día: si ya se envió, no se repite.</div></div></div>';
+  var barra='<div class="daybar"><button class="btn sm" onclick="A.dia(-1)">'+svg('prev')+'</button>'
+    +'<button class="btn sm" onclick="A.hoy()">Hoy</button>'
+    +'<button class="btn sm" onclick="A.dia(1)">'+svg('next')+'</button>'
+    +'<div class="dlabel">'+esc(fmtDia(f))+'</div>'
+    +'<input type="date" value="'+esc(f)+'" onchange="A.setDia(this.value)">'
+    +'<span class="dim" style="margin-left:6px">'+tecs.length+' técnico(s) · '+nEnv+' enviado(s)</span></div>';
+  var acciones='<div class="gbar"><button class="btn sm" onclick="A.selTodos(\'todos\')">Seleccionar todos</button>'
+    +'<button class="btn sm" onclick="A.selTodos(\'pend\')">Solo pendientes</button>'
+    +'<button class="btn sm" onclick="A.selTodos(\'no\')">Ninguno</button>'
+    +'<div class="gsep"></div>'
+    +'<button class="btn pri sm" onclick="A.colaEnviar()">Enviar seleccionados ('+nSel+')</button>'
+    +'<div style="margin-left:auto" class="dim">El correo sale desde el Gmail que tengas abierto</div></div>';
+  var tabla='<div class="card"><table class="t"><thead><tr><th style="width:34px"></th><th style="width:150px">Técnico</th>'
+    +'<th>Trabajos (parte por OT)</th><th style="width:110px">Envío</th><th style="width:70px">Recibido</th><th class="tar">Acciones</th></tr></thead><tbody>'
+    +filas+'</tbody></table></div>';
+  $('main').innerHTML=cab+barra+acciones+tabla;
+}
+var _rp=render;
+render=function(){ if(view==='partes'){ renderNav(); if($('kpis')){ $('kpis').innerHTML=''; } vPartesM(); return; } return _rp.apply(this,arguments); };
+A.render=render;
+function compruebaAviso(){
+  try{
+    if(!APP_LISTA || !puedoEditar()) return;
+    var ahora=new Date();
+    var hm=ahora.getHours()*60+ahora.getMinutes();
+    if(hm < 15*60+30) return;
+    var man=addDays(todayISO(),1);
+    if(AVISADO[man]) return;
+    var tecs=tecnicosDe(man);
+    if(!tecs.length) return;
+    var pend=tecs.filter(function(t){ return !S.partesEnviados[man+'|'+t]; });
+    if(!pend.length) return;
+    AVISADO[man]=1;
+    var h='<h3>Partes de mañana pendientes de enviar</h3><div class="mbody">';
+    h+='<div class="alert w">Son las '+String(ahora.getHours()).padStart(2,'0')+':'+String(ahora.getMinutes()).padStart(2,'0')+'. Quedan <b>'+pend.length+'</b> parte(s) sin enviar para el <b>'+esc(fmtDia(man))+'</b>.</div>';
+    h+='<div style="font-size:12px">'+pend.map(function(t){ return '<span class="badge b-gray" style="margin:2px">'+esc(t)+'</span>'; }).join('')+'</div>';
+    h+='</div><div class="mfoot"><button class="btn" onclick="A.closeModal()">Ahora no</button>';
+    h+='<button class="btn pri" onclick="A.irAPartesManana(\''+man+'\')">Ir a enviarlos</button></div>';
+    openModal(h);
+  }catch(e){}
+}
+A.irAPartesManana = function(f){ closeModal(); dia=f; view='partes'; SELP={}; A.selTodos('pend'); };
+(function(){
+  var n=0;
+  var t=setInterval(function(){
+    n++;
+    if(n>60){ clearInterval(t); return; }
+    if(!APP_LISTA) return;
+    clearInterval(t);
+    DB.loadPartesEnviados().then(function(o){
+      S.partesEnviados=o;
+      if(view==='partes') render();
+      compruebaAviso();
+      setInterval(compruebaAviso,120000);
+    }).catch(function(){});
+  },400);
+})();
+})();
+</script>
