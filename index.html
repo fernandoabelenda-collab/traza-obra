@@ -3121,3 +3121,61 @@ A.render=render;
 })();
 })();
 </script>
+<script>
+/* TRAZA-OBRA · Correo del parte: una linea por trabajo, solo hora de inicio */
+(function(){
+if(typeof S==='undefined'||!S){ setTimeout(arguments.callee,400); return; }
+if(window.__correoV3Listo) return; window.__correoV3Listo=true;
+function iniHora(horario){
+  var h=parseHorario(horario);
+  if(h.franjas&&h.franjas.length){
+    var m=Math.min.apply(null,h.franjas.map(function(fr){ return fr[0]; }));
+    return String(Math.floor(m/60)).padStart(2,'0')+':'+String(m%60).padStart(2,'0');
+  }
+  var mm=/(\d{1,2})[:.h](\d{2})/.exec(horario||'');
+  return mm?String(+mm[1]).padStart(2,'0')+':'+mm[2]:'';
+}
+A.correoParte = function(t){
+  var email=(S.correos&&S.correos.get(t))||'';
+  function abrir(){
+    var rows=S.filas.filter(function(f){
+      return f.fecha===dia && f.tipo==='PRODUCTIVO' && splitTecnicos(f.tecnicos).indexOf(t)>=0;
+    });
+    rows.sort(function(a,b){
+      var x=iniHora(a.horario)||'99:99', y=iniHora(b.horario)||'99:99';
+      return x.localeCompare(y);
+    });
+    var su='Parte de trabajo · '+fmtCorto(dia)+' · '+t;
+    var L=['Hola '+t+',','','Te adjunto tu parte de trabajo para el '+fmtDia(dia)+'.','','Trabajos previstos y hora de inicio:'];
+    rows.forEach(function(f){
+      var p=[(f.cliente||'—')];
+      if(f.centro) p.push(f.centro);
+      if(f.ubicacion) p.push(f.ubicacion);
+      if(f.tecnica) p.push(f.tecnica);
+      var ini=iniHora(f.horario);
+      L.push('· '+p.join(' · ')+(ini?' — inicio '+ini+' h':''));
+    });
+    if(!rows.length) L.push('· (sin trabajos productivos planificados)');
+    L.push('');
+    L.push('Por favor, firma el parte y devuélvelo respondiendo a este mismo correo (foto o escaneo).');
+    L.push('');
+    L.push('Gracias.');
+    L.push('Delegación 1110 · Cádiz · OCA Global');
+    var url='https://mail.google.com/mail/?view=cm&fs=1&to='+encodeURIComponent(email)+'&su='+encodeURIComponent(su)+'&body='+encodeURIComponent(L.join('\n'));
+    window.open(url,'_blank');
+  }
+  if(!email){
+    var e=prompt('Aún no hay correo guardado para '+t+'.\nEscríbelo (se guardará para la próxima vez):','');
+    if(e===null) return;
+    email=(e||'').trim();
+    if(!email){ toast('Sin correo no se puede abrir el envío.'); return; }
+    if(puedoEditar()){
+      DB.guardarCorreo(t,email).then(function(){ S.correos.set(t,email); render(); abrir(); })
+        .catch(function(err){ toast('No se pudo guardar: '+esc(errTxt(err))); abrir(); });
+      return;
+    }
+  }
+  abrir();
+};
+})();
+</script>
