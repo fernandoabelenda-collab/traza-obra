@@ -3179,3 +3179,79 @@ A.correoParte = function(t){
 };
 })();
 </script>
+<script>
+/* TRAZA-OBRA · Parte: Instalacion<-CENTRO, Direccion<-UBICACION */
+(function(){
+if(typeof S==='undefined'||!S){ setTimeout(arguments.callee,400); return; }
+if(window.__parteDirListo) return; window.__parteDirListo=true;
+function campo(l,v){ return '<div class="fld"><span class="lb">'+esc(l)+':</span> <span class="vl">'+esc(v||'')+'</span></div>'; }
+function parteHTML(f,tec){
+  var ot=splitOT(f.ot).join(' / ');
+  var aux=splitTecnicos(f.tecnicos).filter(function(x){ return x!==tec; }).join(', ');
+  var h='<div class="parte">';
+  h+='<div class="hdr"><div class="ttl">REGISTRO DE PEDIDO ESPECÍFICO<br>ORDEN DE TRABAJO ENSAYOS NO DESTRUCTIVOS</div><div class="logo">OCA<span>GLOBAL</span></div></div>';
+  h+='<div class="grid2 top">'+campo('Número Pedido',f.pedido)+campo('Número OT',ot)+campo('Técnica Inspección',f.tecnica)+campo('Nº OT Principal',ot)+'<div></div>'+campo('OT Secundaria nº','')+'</div>';
+  h+='<div class="sec">DETALLES ADMINISTRACIÓN</div>';
+  h+='<div class="grid2">'+campo('Oferta','')+campo('Nº Cita Servicio','')+campo('Instalación',f.centro)+campo('Versión Oferta','')+campo('Solicitante',f.cliente)+campo('NIF/CIF','')+'</div>';
+  h+='<div class="sec">DETALLES INSTALACIÓN ENSAYO</div>';
+  h+='<div class="grid2">'+campo('Titular','')+campo('Contacto','')+campo('Dirección',f.ubicacion)+campo('Población','')+campo('Correo','')+campo('Teléfono','')+campo('Fecha Prevista Inicio',fmtCorto(f.fecha))+campo('Fecha Prevista Fin','')+'</div>';
+  h+='<div class="sec">DETALLES INSPECCIÓN</div>';
+  h+='<div class="grid2">'+campo('Técnica Inspección',f.tecnica)+campo('Procedimiento Ensayo','')+campo('Norma Ensayo',f.codigo)+campo('Norma Evaluación','')+campo('Nivel de Ensayo','')+campo('Nivel Evaluación','')+campo('Alcance Unitario','')+campo('Trabajo Acreditado','')+campo('Inspector Asignado',tec)+campo('Núm Informe Múltiple','')+campo('Inspector Auxiliar',aux)+'<div></div></div>';
+  h+='<div class="note">El inspector asignado dispondrá de los equipos y cualificaciones necesarias para la realización de los ensayos descritos en el presente documento según el procedimiento aplicable.</div>';
+  h+='<div class="sec">ALCANCE PREVISTO</div>'+campo('Referencia Cliente','');
+  h+='<div class="fld"><span class="lb">Descripción Trabajos:</span> <span class="vl">'+esc(f.proyecto||'')+'</span></div>';
+  h+='<div class="sec">FACTURACIÓN</div>'+campo('Fecha de Inspección',fmtCorto(f.fecha));
+  h+='<table class="fact"><thead><tr><th style="width:64px">CANTIDAD</th><th>CONCEPTO</th><th style="width:118px">ARTÍCULO COMERCIAL</th><th style="width:74px">IMPORTE</th></tr></thead><tbody>';
+  for(var i=0;i<4;i++){ h+='<tr><td>&nbsp;</td><td></td><td></td><td></td></tr>'; }
+  h+='</tbody></table>';
+  h+='<div class="sec">OBSERVACIONES</div><div class="obs"></div>';
+  h+='<div class="firmas"><div class="fma"><div class="ln"></div>Válido Ejecución Responsable Calidad de Zona</div><div class="fma"><div class="ln"></div>INSPECTOR OCA ICP</div><div class="fma"><div class="ln"></div>CLIENTE / REPRESENTANTE*</div></div>';
+  h+='<div class="legal">* La firma del presente documento supone la aceptación de los datos contenidos en el mismo.<br>';
+  h+='*Atendiendo a la solicitud del cliente, o bien por estar fuera del alcance acreditado, los ensayos referidos en este pedido NO están cubiertos por la acreditación ENAC 400/LE875 ni por sus acuerdos internacionales de reconocimiento. Dicha circunstancia se hará constar en los informes de la inspección emitidos a raíz de los trabajos descritos.<br>';
+  h+='Este documento solo afecta a los componentes y partes sometidas a ensayo, identificadas en el mismo y en sus registros adjuntos de acuerdo a las referencias dadas por el cliente. Salvo indicación específica en contra, se emplearán las normas y procedimientos de ensayo en su última revisión aplicable según Manual de Calidad disponible para consulta. Salvo indicación específica en contra, no se prevén subcontrataciones parciales ni completas del alcance de este pedido.<br>';
+  h+='OCA Inspección Control y Prevención, SAU informa de que determinará la realización de sus inspecciones como laboratorio en función de las actuaciones realizadas sobre el ítem a inspeccionar, de acuerdo con su Política de Independencia e Imparcialidad. La firma de este documento comporta haber leído y aceptar las condiciones generales de contratación. Los datos personales facilitados se recogen con finalidades administrativas de la relación que nos vincula; puede ejercer sus derechos mediante escrito al Responsable o email a lopd@ocaglobal.com, asunto "Protección de Datos".</div>';
+  h+='<div class="foot">OCA INSPECCIÓN CONTROL Y PREVENCIÓN, S.A.U · Vía de las Dos Castillas, 7 · 28224 Pozuelo de Alarcón (Madrid) · ensayos@ocaglobal.com<br>Delegación comercial: Cádiz - EN · cadiz.ensayos@ocaglobal.com · www.ocaglobal.com · F.PG-16.7200.04 REV.03 08/25</div>';
+  h+='</div>';
+  return h;
+}
+function parteCSS(){
+  var c='';
+  c+='body{font:11px/1.35 Arial,Helvetica,sans-serif;color:#1a1a1a;margin:0;background:#fff}';
+  c+='.noprint{padding:10px;background:#eef2f7;border-bottom:1px solid #ccc;text-align:center}';
+  c+='.noprint button{padding:8px 18px;font-size:13px;background:#1F4E89;color:#fff;border:0;border-radius:6px;cursor:pointer}';
+  c+='.parte{max-width:800px;margin:0 auto;padding:14px 20px;page-break-after:always}';
+  c+='.parte:last-child{page-break-after:auto}';
+  c+='.hdr{display:flex;justify-content:space-between;align-items:flex-start;background:#1b2430;color:#fff;padding:11px 14px}';
+  c+='.hdr .ttl{font-weight:700;font-size:12px;line-height:1.3}';
+  c+='.hdr .logo{font-weight:800;font-size:19px;letter-spacing:1px;text-align:right}';
+  c+='.hdr .logo span{display:block;font-size:7px;letter-spacing:3px;font-weight:600}';
+  c+='.sec{color:#C0392B;font-weight:700;font-size:11.5px;margin:11px 0 4px;border-bottom:1px solid #eee;padding-bottom:2px}';
+  c+='.grid2{display:grid;grid-template-columns:1fr 1fr;gap:1px 24px}.top{margin-top:9px}';
+  c+='.fld{font-size:10.5px;padding:2px 0;border-bottom:1px dotted #e6e6e6}';
+  c+='.fld .lb{font-weight:700;color:#333}.fld .vl{color:#0b3a6b}';
+  c+='.note{font-size:9px;color:#555;margin:6px 0}';
+  c+='table.fact{width:100%;border-collapse:collapse;margin-top:4px;font-size:9.5px}';
+  c+='.fact th{background:#f2f2f2;border:1px solid #ccc;padding:4px;text-align:left;font-size:8.5px}';
+  c+='.fact td{border:1px solid #ccc;height:19px}';
+  c+='.obs{border:1px solid #ddd;min-height:58px;margin-top:4px}';
+  c+='.firmas{display:flex;gap:16px;margin-top:24px}';
+  c+='.firmas .fma{flex:1;font-size:8.5px;text-align:center;color:#333}';
+  c+='.firmas .ln{border-top:1px solid #333;margin-bottom:4px;height:32px}';
+  c+='.legal{font-size:7.3px;color:#555;margin-top:12px;line-height:1.3;text-align:justify}';
+  c+='.foot{font-size:8px;color:#333;text-align:center;margin-top:9px;border-top:1px solid #C0392B;padding-top:5px;font-weight:600}';
+  c+='@media print{.noprint{display:none}.parte{max-width:none;margin:0;padding:9mm}}';
+  return c;
+}
+A.generarPartes = function(tec){
+  var rows=S.filas.filter(function(f){ return f.fecha===dia && f.tipo==='PRODUCTIVO' && splitTecnicos(f.tecnicos).indexOf(tec)>=0; });
+  if(!rows.length){ toast('Ese técnico no tiene trabajos productivos ese día.'); return; }
+  var w=window.open('','_blank');
+  if(!w){ toast('El navegador bloqueó la ventana. Permite ventanas emergentes y reinténtalo.'); return; }
+  var d='<!DOCTYPE html><html lang="es"><head><meta charset="utf-8"><title>Parte '+esc(tec)+'</title><style>'+parteCSS()+'</style></head><body>';
+  d+='<div class="noprint"><button onclick="window.print()">Imprimir / Guardar como PDF</button> &nbsp; '+rows.length+' parte(s) · '+esc(tec)+' · '+esc(fmtCorto(dia))+'</div>';
+  d+=rows.map(function(f){ return parteHTML(f,tec); }).join('');
+  d+='</body></html>';
+  w.document.open(); w.document.write(d); w.document.close();
+};
+})();
+</script>
