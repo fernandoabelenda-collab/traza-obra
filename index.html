@@ -4555,3 +4555,61 @@ var g=setInterval(function(){
 },2000);
 })();
 </script>
+<script>
+/* TRAZA-OBRA · Parchar tambien la cola de envio con credenciales */
+(function(){
+function iniH(hor){var h=parseHorario(hor);if(h.franjas&&h.franjas.length){var m=Math.min.apply(null,h.franjas.map(function(fr){return fr[0];}));return String(Math.floor(m/60)).padStart(2,'0')+':'+String(m%60).padStart(2,'0');}var mm=/(\d{1,2})[:.h](\d{2})/.exec(hor||'');return mm?String(+mm[1]).padStart(2,'0')+':'+mm[2]:'';}
+function enlC(t,f,rows){
+  var cfg=getCfg();if(!cfg)return'#';
+  var arr=rows.map(function(x){return{o:splitOT(x.ot).join(' / '),p:x.pedido||'',t:x.tecnica||'',i:x.centro||'',d:x.ubicacion||'',s:x.cliente||'',n:x.codigo||'',x:x.proyecto||'',a:splitTecnicos(x.tecnicos).filter(function(z){return z!==t;}).join(', ')};});
+  var base=location.origin+location.pathname.replace(/[^/]*$/,'')+'parte.html';
+  return base+'#'+encodeURIComponent(JSON.stringify({t:t,f:f,r:arr,re:YO.email||'',su:cfg.url,sk:cfg.key}));
+}
+function cuerpoC(t,f,rows){
+  var L=['Hola '+t+',','','Este es tu parte de trabajo para el '+fmtDia(f)+'.','','Trabajos previstos y hora de inicio:'];
+  rows.forEach(function(x){var p=[(x.cliente||'-')];if(x.centro)p.push(x.centro);if(x.ubicacion)p.push(x.ubicacion);if(x.tecnica)p.push(x.tecnica);var ini=iniH(x.horario);L.push('. '+p.join(' . ')+(ini?' - inicio '+ini+' h':''));});
+  L.push('','ABRIR, FIRMAR Y ENVIAR DESDE EL MOVIL:',enlC(t,f,rows),'');
+  L.push('Abre el enlace, firma con el dedo y pulsa "Firmar y enviar". Se guarda directamente, no tienes que descargar nada.','','Gracias.','Delegacion 1110 . Cadiz . OCA Global');
+  return L.join('\n');
+}
+function abrirGmailC(t,f){
+  var rows=S.filas.filter(function(x){return x.fecha===f&&x.tipo==='PRODUCTIVO'&&splitTecnicos(x.tecnicos).indexOf(t)>=0;});
+  rows.sort(function(a,b){return(iniH(a.horario)||'99:99').localeCompare(iniH(b.horario)||'99:99');});
+  if(!rows.length)return false;
+  var email=(S.correos&&S.correos.get(t))||'';
+  var su='Parte de trabajo · '+fmtCorto(f)+' · '+t;
+  window.open('https://mail.google.com/mail/?view=cm&fs=1&to='+encodeURIComponent(email)+'&su='+encodeURIComponent(su)+'&body='+encodeURIComponent(cuerpoC(t,f,rows)),'_blank');
+  return true;
+}
+var c=0;
+var g=setInterval(function(){
+  c++;if(c>90){clearInterval(g);return;}
+  if(typeof A==='undefined'||typeof S==='undefined'||!getCfg())return;
+  /* Parchar correoParte individual */
+  A.correoParte=function(t){
+    var email=(S.correos&&S.correos.get(t))||'';
+    if(!email){var e=prompt('Falta el correo de '+t+'. Escríbelo (se guardará):','');if(e===null)return;email=(e||'').trim();if(!email){toast('Sin correo.');return;}if(puedoEditar()){DB.guardarCorreo(t,email).then(function(){S.correos.set(t,email);render();abrirGmailC(t,dia);}).catch(function(err){toast('Error: '+esc(errTxt(err)));abrirGmailC(t,dia);});return;}}
+    abrirGmailC(t,dia);
+  };
+  A.enlaceParte=function(t){
+    var rows=S.filas.filter(function(x){return x.fecha===dia&&x.tipo==='PRODUCTIVO'&&splitTecnicos(x.tecnicos).indexOf(t)>=0;});
+    if(!rows.length){toast('Sin trabajos productivos.');return;}
+    window.open(enlC(t,dia,rows),'_blank');
+  };
+  /* Parchar colaAbrir (envio en cadena) */
+  A.colaAbrir=function(){
+    var f=dia,t=COLA[COLAI];
+    var email=(S.correos&&S.correos.get(t))||'';
+    if(!email){
+      var e=prompt('Falta el correo de '+t+'. Escríbelo (se guardará):','');
+      if(e===null)return;email=(e||'').trim();
+      if(!email){toast('Sin correo.');return;}
+      DB.guardarCorreo(t,email).then(function(){S.correos.set(t,email);A.colaAbrir();}).catch(function(err){toast('Error: '+esc(errTxt(err)));});
+      return;
+    }
+    abrirGmailC(t,f);
+    DB.marcarEnviado(f,t,email,'manual').then(function(){COLAI++;A.colaPaso();}).catch(function(){COLAI++;A.colaPaso();});
+  };
+},2000);
+})();
+</script>
