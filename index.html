@@ -4301,148 +4301,176 @@ A.render=render;
 })();
 </script>
 <script>
-/* TRAZA-OBRA · Vista partes DEFINITIVA - se ejecuta la ultima */
+/* TRAZA-OBRA · Firma en vista partes — bloque limpio */
 (function(){
-var intentos=0;
+var n=0;
 var t=setInterval(function(){
-  intentos++;
-  if(intentos>120){clearInterval(t);return;}
-  if(typeof S==='undefined'||!S||!APP_LISTA)return;
+  n++; if(n>80){clearInterval(t);return;}
+  if(typeof S==='undefined'||!S||!APP_LISTA) return;
   clearInterval(t);
-  setTimeout(function(){
 
-function iniH(hor){var h=parseHorario(hor);if(h.franjas&&h.franjas.length){var m=Math.min.apply(null,h.franjas.map(function(fr){return fr[0];}));return String(Math.floor(m/60)).padStart(2,'0')+':'+String(m%60).padStart(2,'0');}var mm=/(\d{1,2})[:.h](\d{2})/.exec(hor||'');return mm?String(+mm[1]).padStart(2,'0')+':'+mm[2]:'';}
-function tecsDe(f){var m={};S.filas.forEach(function(x){if(x.fecha!==f||x.tipo!=='PRODUCTIVO')return;splitTecnicos(x.tecnicos).forEach(function(t){if(t)m[t]=1;});});return Object.keys(m).sort();}
-function filsDe(t,f){return S.filas.filter(function(x){return x.fecha===f&&x.tipo==='PRODUCTIVO'&&splitTecnicos(x.tecnicos).indexOf(t)>=0;}).sort(function(a,b){return(iniH(a.horario)||'99:99').localeCompare(iniH(b.horario)||'99:99');});}
-function campoP(l,v){return'<div class="fld"><span class="lb">'+esc(l)+':</span> <span class="vl">'+esc(v||'')+'</span></div>';}
+  if(!DB.getFirma){
+    DB.getFirma=function(fecha,tec){
+      return SB.from('firma_parte').select('*').eq('fecha',fecha).eq('tecnico',tec).maybeSingle().then(function(r){
+        if(r.error) throw r.error; return r.data;
+      });
+    };
+  }
+  if(!DB.loadFirmas){
+    DB.loadFirmas=function(){
+      return SB.from('firma_parte').select('fecha,tecnico,firmado_en').then(function(r){
+        if(r.error) throw r.error;
+        var o={}; (r.data||[]).forEach(function(x){o[x.fecha+'|'+x.tecnico]={en:x.firmado_en};}); return o;
+      });
+    };
+  }
+  if(!S.firmas) S.firmas={};
+  DB.loadFirmas().then(function(o){S.firmas=o;}).catch(function(){});
 
-A.descargarFirmado=function(tec){
-  toast('Cargando firma…');
-  DB.getFirma(dia,tec).then(function(firma){
-    if(!firma){toast('No hay firma guardada de '+esc(tec)+' para este día.');return;}
-    var rows=filsDe(tec,dia);
-    if(!rows.length){toast('Sin trabajos productivos.');return;}
-    var w=window.open('','_blank');
-    if(!w){toast('Permite ventanas emergentes.');return;}
-    var css='body{font:11px/1.35 Arial,Helvetica,sans-serif;color:#1a1a1a;margin:0;background:#fff}';
-    css+='.noprint{padding:10px;background:#eef2f7;border-bottom:1px solid #ccc;text-align:center}';
-    css+='.noprint button{padding:8px 18px;font-size:13px;background:#1F4E89;color:#fff;border:0;border-radius:6px;cursor:pointer}';
-    css+='.parte{max-width:800px;margin:0 auto;padding:14px 20px;page-break-after:always}.parte:last-child{page-break-after:auto}';
-    css+='.hdr{display:flex;justify-content:space-between;background:#1b2430;color:#fff;padding:11px 14px}';
-    css+='.hdr .ttl{font-weight:700;font-size:12px;line-height:1.3}.hdr .logo{font-weight:800;font-size:19px;letter-spacing:1px;text-align:right}';
-    css+='.hdr .logo span{display:block;font-size:7px;letter-spacing:3px;font-weight:600}';
-    css+='.sec{color:#C0392B;font-weight:700;font-size:11.5px;margin:11px 0 4px;border-bottom:1px solid #eee;padding-bottom:2px}';
-    css+='.grid2{display:grid;grid-template-columns:1fr 1fr;gap:1px 24px}.top{margin-top:9px}';
-    css+='.fld{font-size:10.5px;padding:2px 0;border-bottom:1px dotted #e6e6e6}.fld .lb{font-weight:700;color:#333}.fld .vl{color:#0b3a6b}';
-    css+='.note{font-size:9px;color:#555;margin:6px 0}';
-    css+='table.fact{width:100%;border-collapse:collapse;margin-top:4px;font-size:9.5px}';
-    css+='.fact th{background:#f2f2f2;border:1px solid #ccc;padding:4px;text-align:left;font-size:8.5px}.fact td{border:1px solid #ccc;height:19px}';
-    css+='.obs{border:1px solid #ddd;min-height:58px;margin-top:4px;padding:6px}';
-    css+='.firmas{display:flex;gap:16px;margin-top:24px}.firmas .fma{flex:1;font-size:8.5px;text-align:center;color:#333}';
-    css+='.firmas .sigimg{width:100%;height:70px;object-fit:contain;border:1px solid #ccc;border-radius:3px}';
-    css+='.firmas .ln{border:1px solid #333;height:70px;border-radius:3px}';
-    css+='.legal{font-size:7.3px;color:#555;margin-top:12px;line-height:1.3;text-align:justify}';
-    css+='.foot{font-size:8px;color:#333;text-align:center;margin-top:9px;border-top:1px solid #C0392B;padding-top:5px;font-weight:600}';
-    css+='@media print{.noprint{display:none}.parte{max-width:none;margin:0;padding:9mm}}';
-    var partes=rows.map(function(f){
-      var ot=splitOT(f.ot).join(' / ');
-      var aux=splitTecnicos(f.tecnicos).filter(function(z){return z!==tec;}).join(', ');
-      var h='<div class="parte">';
-      h+='<div class="hdr"><div class="ttl">REGISTRO DE PEDIDO ESPECÍFICO<br>ORDEN DE TRABAJO ENSAYOS NO DESTRUCTIVOS</div><div class="logo">OCA<span>GLOBAL</span></div></div>';
-      h+='<div class="grid2 top">'+campoP('Número Pedido',f.pedido)+campoP('Número OT',ot)+campoP('Técnica Inspección',f.tecnica)+campoP('Nº OT Principal',ot)+'<div></div>'+campoP('OT Secundaria nº','')+'</div>';
-      h+='<div class="sec">DETALLES ADMINISTRACIÓN</div>';
-      h+='<div class="grid2">'+campoP('Oferta','')+campoP('Nº Cita Servicio','')+campoP('Instalación',f.centro)+campoP('Versión Oferta','')+campoP('Solicitante',f.cliente)+campoP('NIF/CIF','')+'</div>';
-      h+='<div class="sec">DETALLES INSTALACIÓN ENSAYO</div>';
-      h+='<div class="grid2">'+campoP('Titular','')+campoP('Contacto','')+campoP('Dirección',f.ubicacion)+campoP('Población','')+campoP('Correo','')+campoP('Teléfono','')+campoP('Fecha Prevista Inicio',fmtCorto(f.fecha))+campoP('Fecha Prevista Fin','')+'</div>';
-      h+='<div class="sec">DETALLES INSPECCIÓN</div>';
-      h+='<div class="grid2">'+campoP('Técnica Inspección',f.tecnica)+campoP('Procedimiento Ensayo','')+campoP('Norma Ensayo',f.codigo)+campoP('Norma Evaluación','')+campoP('Nivel de Ensayo','')+campoP('Nivel Evaluación','')+campoP('Alcance Unitario','')+campoP('Trabajo Acreditado','')+campoP('Inspector Asignado',tec)+campoP('Núm Informe Múltiple','')+campoP('Inspector Auxiliar',aux)+'<div></div></div>';
-      h+='<div class="note">El inspector asignado dispondrá de los equipos y cualificaciones necesarias para la realización de los ensayos descritos en el presente documento según el procedimiento aplicable.</div>';
-      h+='<div class="sec">ALCANCE PREVISTO</div>'+campoP('Referencia Cliente','');
-      h+='<div class="fld"><span class="lb">Descripción Trabajos:</span> <span class="vl">'+esc(f.proyecto||'')+'</span></div>';
-      h+='<div class="sec">FACTURACIÓN</div>'+campoP('Fecha de Inspección',fmtCorto(f.fecha));
-      h+='<table class="fact"><thead><tr><th style="width:64px">CANTIDAD</th><th>CONCEPTO</th><th style="width:118px">ARTÍCULO COMERCIAL</th><th style="width:74px">IMPORTE</th></tr></thead><tbody>';
-      for(var k=0;k<4;k++){h+='<tr><td>&nbsp;</td><td></td><td></td><td></td></tr>';}
-      h+='</tbody></table>';
-      h+='<div class="sec">OBSERVACIONES</div><div class="obs">'+(firma.observaciones?esc(firma.observaciones):'')+'</div>';
-      h+='<div class="firmas">';
-      h+='<div class="fma"><div class="ln"></div><div style="margin-top:5px">Válido Ejecución Responsable Calidad de Zona</div></div>';
-      h+='<div class="fma">'+(firma.firma_inspector?'<img class="sigimg" src="'+firma.firma_inspector+'" alt="Firma">':'<div class="ln"></div>');
-      h+='<div style="margin-top:5px">'+esc(tec)+'</div><div>INSPECTOR OCA ICP</div></div>';
-      h+='<div class="fma">'+(firma.firma_cliente?'<img class="sigimg" src="'+firma.firma_cliente+'" alt="Firma">':'<div class="ln"></div>');
-      h+='<div style="margin-top:5px">'+(firma.nombre_cliente?esc(firma.nombre_cliente):'')+'</div><div>CLIENTE / REPRESENTANTE*</div></div>';
-      h+='</div>';
-      h+='<div class="legal">* La firma del presente documento supone la aceptación de los datos contenidos en el mismo. Este documento solo afecta a los componentes y partes sometidas a ensayo. OCA Inspección Control y Prevención, SAU informa de que determinará la realización de sus inspecciones como laboratorio en función de las actuaciones realizadas sobre el ítem a inspeccionar.</div>';
-      h+='<div class="foot">OCA INSPECCIÓN CONTROL Y PREVENCIÓN, S.A.U · Vía de las Dos Castillas, 7 · 28224 Pozuelo de Alarcón (Madrid)<br>Delegación comercial: Cádiz - EN · cadiz.ensayos@ocaglobal.com · www.ocaglobal.com · F.PG-16.7200.04 REV.03 08/25</div>';
-      h+='</div>';
-      return h;
-    }).join('');
-    var doc='<!DOCTYPE html><html lang="es"><head><meta charset="utf-8"><title>Parte firmado '+esc(tec)+'</title><style>'+css+'</style></head><body>';
-    doc+='<div class="noprint"><button onclick="window.print()">Imprimir / Guardar como PDF</button> &nbsp; '+esc(tec)+' · '+esc(fmtCorto(dia))+' · Firmado '+esc(new Date(firma.firmado_en).toLocaleString('es-ES'))+'</div>';
-    doc+=partes+'</body></html>';
-    w.document.open();w.document.write(doc);w.document.close();
-  }).catch(function(e){toast('No se pudo cargar la firma: '+esc(errTxt(e)));});
-};
+  A.recargarFirmas=function(){
+    DB.loadFirmas().then(function(o){S.firmas=o;render();toast('Firmas actualizadas.');}).catch(function(e){toast('No se pudo: '+esc(errTxt(e)));});
+  };
 
-function vPartesD(){
-  var f=dia,puede=puedoEditar(),tecs=tecsDe(f);
-  var env=S.partesEnviados||{},fir=S.firmas||{};
-  var nSel=Object.keys(S.selPartes||{}).length;
-  var nEnv=tecs.filter(function(t){return env[f+'|'+t];}).length;
-  var nFir=tecs.filter(function(t){return fir[f+'|'+t];}).length;
-  var filas=tecs.map(function(t){
-    var rows=filsDe(t,f),ev=env[f+'|'+t],fi=fir[f+'|'+t];
-    var mail=(S.correos&&S.correos.get(t))||'';
-    var rec=S.partesRecibidos?S.partesRecibidos.get(f+'|'+t):null;
-    var trab=rows.map(function(x){
-      var ini=iniH(x.horario);
-      return'<div class="dim" style="font-size:11.5px">OT <b class="mono">'+esc(splitOT(x.ot).join(' / ')||'-')+'</b> · '+esc(x.cliente||'-')+' · '+esc(x.tecnica||'-')+(ini?' · <b>'+esc(ini)+'</b>':'')+'</div>';
-    }).join('');
-    var col='<td><b>'+esc(t)+'</b><br><span class="dim" style="font-size:10.5px">'+(mail?esc(mail):'<b style="color:var(--bad)">sin correo</b>')+'</span>';
-    if(puede)col+='<br><button class="btn sm" style="margin-top:3px" onclick="A.editarCorreoTecnico(\''+esc(t)+'\')">'+(mail?'Editar':'Añadir')+' correo</button>';
-    col+='</td>';
-    var estEnv=ev?'<span class="badge b-ok">✓ Enviado</span><br><span class="dim" style="font-size:10px">'+esc(ev.por||'')+'</span>':'<span class="badge b-gray">Pendiente</span>';
-    var estFir='';
-    if(fi){
-      var hFir=fi.en?new Date(fi.en).toLocaleString('es-ES',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):'';
-      estFir='<span class="badge b-ok">✓ Firmado</span><br><span class="dim" style="font-size:10px">'+esc(hFir)+'</span>';
-    } else {estFir='<span class="dim">—</span>';}
-    var acc='<button class="btn sm pri" onclick="A.generarPartes(\''+esc(t)+'\')">Parte</button> ';
-    acc+='<button class="btn sm" onclick="A.correoParte(\''+esc(t)+'\')">Correo</button> ';
-    if(fi)acc+='<button class="btn sm" onclick="A.descargarFirmado(\''+esc(t)+'\')">Parte firmado</button> ';
-    if(puede&&ev)acc+='<button class="btn sm" onclick="A.quitarEnvio(\''+esc(t)+'\')">Quitar envío</button> ';
-    if(puede)acc+=(rec?'<button class="btn sm" onclick="A.quitarRecibidoParte(\''+esc(t)+'\')">Quitar recibido</button>':'<button class="btn sm" onclick="A.marcarRecibidoParte(\''+esc(t)+'\')">Recibido</button>');
-    return'<tr><td class="tac"><input type="checkbox" '+((S.selPartes||{})[t]?'checked':'')+' onclick="A.selPar(\''+esc(t)+'\')"></td>'+col
-      +'<td>'+trab+'</td><td>'+estEnv+'</td><td>'+estFir+'</td>'
-      +'<td>'+(rec?'<span class="badge b-ok">✓</span>':'<span class="dim">—</span>')+'</td>'
-      +'<td class="tar" style="white-space:nowrap">'+acc+'</td></tr>';
-  }).join('');
-  if(!tecs.length)filas='<tr><td colspan="7"><div class="empty">Sin trabajos productivos planificados este día.</div></td></tr>';
-  var cab='<div class="phead"><div><h2>Partes de trabajo</h2><div class="sub">Solo <b>PRODUCTIVO</b>. El técnico firma desde el móvil y la firma se guarda directamente en el servidor.</div></div>'
-    +'<div class="actions"><button class="btn" onclick="A.recargarFirmas()">Actualizar firmas</button></div></div>';
-  var barra='<div class="daybar"><button class="btn sm" onclick="A.dia(-1)">'+svg('prev')+'</button>'
-    +'<button class="btn sm" onclick="A.hoy()">Hoy</button><button class="btn sm" onclick="A.dia(1)">'+svg('next')+'</button>'
-    +'<div class="dlabel">'+esc(fmtDia(f))+'</div><input type="date" value="'+esc(f)+'" onchange="A.setDia(this.value)">'
-    +'<span class="dim" style="margin-left:6px">'+tecs.length+' téc. · '+nEnv+' env. · '+nFir+' firm.</span></div>';
-  var acciones='<div class="gbar"><button class="btn sm" onclick="A.selTodos(\'todos\')">Todos</button>'
-    +'<button class="btn sm" onclick="A.selTodos(\'pend\')">Pendientes</button>'
-    +'<button class="btn sm" onclick="A.selTodos(\'no\')">Ninguno</button><div class="gsep"></div>'
-    +'<button class="btn pri sm" onclick="A.colaEnviar()">Enviar seleccionados ('+nSel+')</button></div>';
-  var tabla='<div class="card"><table class="t"><thead><tr><th style="width:34px"></th><th style="width:150px">Técnico</th>'
-    +'<th>Trabajos</th><th style="width:100px">Envío</th><th style="width:100px">Firma</th><th style="width:70px">Recibido</th><th class="tar">Acciones</th></tr></thead><tbody>'
-    +filas+'</tbody></table></div>';
-  $('main').innerHTML=cab+barra+acciones+tabla;
-}
+  function iniH(hor){var h=parseHorario(hor);if(h.franjas&&h.franjas.length){var m=Math.min.apply(null,h.franjas.map(function(fr){return fr[0];}));return String(Math.floor(m/60)).padStart(2,'0')+':'+String(m%60).padStart(2,'0');}var mm=/(\d{1,2})[:.h](\d{2})/.exec(hor||'');return mm?String(+mm[1]).padStart(2,'0')+':'+mm[2]:'';}
+  function campoP(l,v){return'<div class="fld"><span class="lb">'+esc(l)+':</span> <span class="vl">'+esc(v||'')+'</span></div>';}
+  function tecsDe(f){var m={};S.filas.forEach(function(x){if(x.fecha!==f||x.tipo!=='PRODUCTIVO')return;splitTecnicos(x.tecnicos).forEach(function(t){if(t)m[t]=1;});});return Object.keys(m).sort();}
+  function filsDe(t,f){return S.filas.filter(function(x){return x.fecha===f&&x.tipo==='PRODUCTIVO'&&splitTecnicos(x.tecnicos).indexOf(t)>=0;}).sort(function(a,b){return(iniH(a.horario)||'99:99').localeCompare(iniH(b.horario)||'99:99');});}
 
-render=function(){
-  if(view==='partes'){renderNav();if($('kpis')){$('kpis').innerHTML='';}vPartesD();return;}
-  if(view==='horasfuera'){renderNav();if($('kpis')){$('kpis').innerHTML='';}if(typeof vHE2==='function')vHE2();else if(typeof vHE==='function')vHE();return;}
-  if(view==='produccion'){renderNav();if($('kpis')){$('kpis').innerHTML='';}if(typeof vProd2==='function')vProd2();return;}
-  if(view==='calendario'){renderNav();if($('kpis')){$('kpis').innerHTML='';}if(typeof vCalendario==='function')vCalendario();return;}
-  if(typeof _render_prev==='function')return _render_prev.apply(this,arguments);
-};
-A.render=render;
+  A.descargarFirmado=function(tec){
+    toast('Cargando firma…');
+    DB.getFirma(dia,tec).then(function(firma){
+      if(!firma){toast('No hay firma de '+esc(tec)+' para este día.');return;}
+      var rows=filsDe(tec,dia);
+      if(!rows.length){toast('Sin trabajos productivos.');return;}
+      var w=window.open('','_blank');
+      if(!w){toast('Permite ventanas emergentes.');return;}
+      var css='body{font:11px/1.35 Arial,Helvetica,sans-serif;color:#1a1a1a;margin:0;background:#fff}';
+      css+='.noprint{padding:10px;background:#eef2f7;border-bottom:1px solid #ccc;text-align:center}';
+      css+='.noprint button{padding:8px 18px;font-size:13px;background:#1F4E89;color:#fff;border:0;border-radius:6px;cursor:pointer}';
+      css+='.parte{max-width:800px;margin:0 auto;padding:14px 20px;page-break-after:always}.parte:last-child{page-break-after:auto}';
+      css+='.hdr{display:flex;justify-content:space-between;background:#1b2430;color:#fff;padding:11px 14px}';
+      css+='.hdr .ttl{font-weight:700;font-size:12px;line-height:1.3}.hdr .logo{font-weight:800;font-size:19px;letter-spacing:1px;text-align:right}';
+      css+='.hdr .logo span{display:block;font-size:7px;letter-spacing:3px;font-weight:600}';
+      css+='.sec{color:#C0392B;font-weight:700;font-size:11.5px;margin:11px 0 4px;border-bottom:1px solid #eee;padding-bottom:2px}';
+      css+='.grid2{display:grid;grid-template-columns:1fr 1fr;gap:1px 24px}.top{margin-top:9px}';
+      css+='.fld{font-size:10.5px;padding:2px 0;border-bottom:1px dotted #e6e6e6}.fld .lb{font-weight:700;color:#333}.fld .vl{color:#0b3a6b}';
+      css+='.note{font-size:9px;color:#555;margin:6px 0}';
+      css+='table.fact{width:100%;border-collapse:collapse;margin-top:4px;font-size:9.5px}';
+      css+='.fact th{background:#f2f2f2;border:1px solid #ccc;padding:4px;text-align:left;font-size:8.5px}.fact td{border:1px solid #ccc;height:19px}';
+      css+='.obs{border:1px solid #ddd;min-height:58px;margin-top:4px;padding:6px}';
+      css+='.firmas{display:flex;gap:16px;margin-top:24px}.firmas .fma{flex:1;font-size:8.5px;text-align:center;color:#333}';
+      css+='.firmas .sigimg{width:100%;height:70px;object-fit:contain;border:1px solid #ccc;border-radius:3px}';
+      css+='.firmas .ln{border:1px solid #333;height:70px;border-radius:3px}';
+      css+='.legal{font-size:7.3px;color:#555;margin-top:12px;line-height:1.3;text-align:justify}';
+      css+='.foot{font-size:8px;color:#333;text-align:center;margin-top:9px;border-top:1px solid #C0392B;padding-top:5px;font-weight:600}';
+      css+='@media print{.noprint{display:none}.parte{max-width:none;margin:0;padding:9mm}}';
+      var partes=rows.map(function(f){
+        var ot=splitOT(f.ot).join(' / ');
+        var aux=splitTecnicos(f.tecnicos).filter(function(z){return z!==tec;}).join(', ');
+        var h='<div class="parte">';
+        h+='<div class="hdr"><div class="ttl">REGISTRO DE PEDIDO ESPECÍFICO<br>ORDEN DE TRABAJO ENSAYOS NO DESTRUCTIVOS</div><div class="logo">OCA<span>GLOBAL</span></div></div>';
+        h+='<div class="grid2 top">'+campoP('Número Pedido',f.pedido)+campoP('Número OT',ot)+campoP('Técnica Inspección',f.tecnica)+campoP('Nº OT Principal',ot)+'<div></div>'+campoP('OT Secundaria nº','')+'</div>';
+        h+='<div class="sec">DETALLES ADMINISTRACIÓN</div>';
+        h+='<div class="grid2">'+campoP('Oferta','')+campoP('Nº Cita Servicio','')+campoP('Instalación',f.centro)+campoP('Versión Oferta','')+campoP('Solicitante',f.cliente)+campoP('NIF/CIF','')+'</div>';
+        h+='<div class="sec">DETALLES INSTALACIÓN ENSAYO</div>';
+        h+='<div class="grid2">'+campoP('Titular','')+campoP('Contacto','')+campoP('Dirección',f.ubicacion)+campoP('Población','')+campoP('Correo','')+campoP('Teléfono','')+campoP('Fecha Prevista Inicio',fmtCorto(f.fecha))+campoP('Fecha Prevista Fin','')+'</div>';
+        h+='<div class="sec">DETALLES INSPECCIÓN</div>';
+        h+='<div class="grid2">'+campoP('Técnica Inspección',f.tecnica)+campoP('Procedimiento Ensayo','')+campoP('Norma Ensayo',f.codigo)+campoP('Norma Evaluación','')+campoP('Nivel de Ensayo','')+campoP('Nivel Evaluación','')+campoP('Alcance Unitario','')+campoP('Trabajo Acreditado','')+campoP('Inspector Asignado',tec)+campoP('Núm Informe Múltiple','')+campoP('Inspector Auxiliar',aux)+'<div></div></div>';
+        h+='<div class="note">El inspector asignado dispondrá de los equipos y cualificaciones necesarias para la realización de los ensayos descritos en el presente documento según el procedimiento aplicable.</div>';
+        h+='<div class="sec">ALCANCE PREVISTO</div>'+campoP('Referencia Cliente','');
+        h+='<div class="fld"><span class="lb">Descripción Trabajos:</span> <span class="vl">'+esc(f.proyecto||'')+'</span></div>';
+        h+='<div class="sec">FACTURACIÓN</div>'+campoP('Fecha de Inspección',fmtCorto(f.fecha));
+        h+='<table class="fact"><thead><tr><th style="width:64px">CANTIDAD</th><th>CONCEPTO</th><th style="width:118px">ARTÍCULO COMERCIAL</th><th style="width:74px">IMPORTE</th></tr></thead><tbody>';
+        for(var k=0;k<4;k++){h+='<tr><td>&nbsp;</td><td></td><td></td><td></td></tr>';}
+        h+='</tbody></table>';
+        h+='<div class="sec">OBSERVACIONES</div><div class="obs">'+(firma.observaciones?esc(firma.observaciones):'')+'</div>';
+        h+='<div class="firmas">';
+        h+='<div class="fma"><div class="ln"></div><div style="margin-top:5px">Válido Ejecución Responsable Calidad de Zona</div></div>';
+        h+='<div class="fma">'+(firma.firma_inspector?'<img class="sigimg" src="'+firma.firma_inspector+'" alt="Firma">':'<div class="ln"></div>');
+        h+='<div style="margin-top:5px">'+esc(tec)+'</div><div>INSPECTOR OCA ICP</div></div>';
+        h+='<div class="fma">'+(firma.firma_cliente?'<img class="sigimg" src="'+firma.firma_cliente+'" alt="Firma">':'<div class="ln"></div>');
+        h+='<div style="margin-top:5px">'+(firma.nombre_cliente?esc(firma.nombre_cliente):'')+'</div><div>CLIENTE / REPRESENTANTE*</div></div>';
+        h+='</div>';
+        h+='<div class="legal">* La firma del presente documento supone la aceptación de los datos contenidos en el mismo.</div>';
+        h+='<div class="foot">OCA INSPECCIÓN CONTROL Y PREVENCIÓN, S.A.U · Vía de las Dos Castillas, 7 · 28224 Pozuelo de Alarcón (Madrid)<br>Delegación comercial: Cádiz - EN · cadiz.ensayos@ocaglobal.com · F.PG-16.7200.04 REV.03 08/25</div>';
+        h+='</div>';
+        return h;
+      }).join('');
+      var doc='<!DOCTYPE html><html lang="es"><head><meta charset="utf-8"><title>Parte firmado '+esc(tec)+'</title><style>'+css+'</style></head><body>';
+      doc+='<div class="noprint"><button onclick="window.print()">Imprimir / Guardar como PDF</button> &nbsp; '+esc(tec)+' · '+esc(fmtCorto(dia))+' · Firmado '+esc(new Date(firma.firmado_en).toLocaleString('es-ES'))+'</div>';
+      doc+=partes+'</body></html>';
+      w.document.open();w.document.write(doc);w.document.close();
+    }).catch(function(e){toast('No se pudo cargar: '+esc(errTxt(e)));});
+  };
 
-  },3000);
+  /* En vez de redefinir render, inyectar firma en el DOM despues de que se pinte */
+  setInterval(function(){
+    if(view!=='partes') return;
+    var tabla=document.querySelector('#main table.t');
+    if(!tabla) return;
+    var thead=tabla.querySelector('thead tr');
+    if(!thead) return;
+    if(thead.querySelector('.thfirma')) return; /* ya inyectado */
+    /* Añadir columna Firma en el header */
+    var thRec=thead.querySelectorAll('th');
+    var thAntes=null;
+    for(var i=0;i<thRec.length;i++){if(thRec[i].textContent.indexOf('Recibido')>=0){thAntes=thRec[i];break;}}
+    var thF=document.createElement('th');
+    thF.className='thfirma';
+    thF.style.cssText='width:100px';
+    thF.textContent='Firma';
+    if(thAntes) thead.insertBefore(thF,thAntes);
+    else thead.appendChild(thF);
+    /* Añadir celda Firma en cada fila */
+    var filas=tabla.querySelectorAll('tbody tr');
+    var fir=S.firmas||{};
+    var f=dia;
+    var tecs=tecsDe(f);
+    for(var j=0;j<filas.length;j++){
+      var fila=filas[j];
+      var chk=fila.querySelector('input[type=checkbox]');
+      if(!chk) continue;
+      var tec=tecs[j];
+      if(!tec) continue;
+      var fi=fir[f+'|'+tec];
+      var td=document.createElement('td');
+      if(fi){
+        var hFir=fi.en?new Date(fi.en).toLocaleString('es-ES',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):'';
+        td.innerHTML='<span class="badge b-ok">✓ Firmado</span><br><span class="dim" style="font-size:10px">'+esc(hFir)+'</span>';
+      } else {
+        td.innerHTML='<span class="dim">—</span>';
+      }
+      /* Insertar antes de Recibido */
+      var celdas=fila.querySelectorAll('td');
+      var recTd=null;
+      for(var k=0;k<celdas.length;k++){
+        if(celdas[k].querySelector('.b-ok') && celdas[k].textContent.indexOf('✓')>=0 && celdas[k].nextElementSibling && celdas[k].nextElementSibling.querySelector('.tar')){
+          recTd=celdas[k]; break;
+        }
+      }
+      /* Buscar la penúltima celda (Recibido está antes de Acciones) */
+      if(celdas.length>=3){
+        var antesDeAcc=celdas[celdas.length-2];
+        fila.insertBefore(td,antesDeAcc);
+      } else {
+        fila.appendChild(td);
+      }
+      /* Añadir botón Parte firmado en la celda de acciones si firmó */
+      if(fi){
+        var accTd=fila.querySelector('td.tar');
+        if(!accTd) accTd=celdas[celdas.length-1];
+        if(accTd && accTd.innerHTML.indexOf('Parte firmado')<0){
+          var btn=document.createElement('button');
+          btn.className='btn sm';
+          btn.textContent='Parte firmado';
+          btn.setAttribute('onclick',"A.descargarFirmado('"+tec.replace(/'/g,"\\'")+"')");
+          accTd.insertBefore(btn,accTd.firstChild);
+          accTd.insertBefore(document.createTextNode(' '),btn.nextSibling);
+        }
+      }
+    }
+  },800);
+
 },400);
 })();
 </script>
