@@ -4474,3 +4474,43 @@ var t=setInterval(function(){
 },400);
 })();
 </script>
+<script>
+/* TRAZA-OBRA · correoParte con credenciales - ultimo en ejecutar */
+(function(){
+var n=0;
+var t=setInterval(function(){
+  n++;if(n>120){clearInterval(t);return;}
+  if(typeof S==='undefined'||!S||!APP_LISTA||!getCfg())return;
+  clearInterval(t);
+  setTimeout(function(){
+    function iniH(hor){var h=parseHorario(hor);if(h.franjas&&h.franjas.length){var m=Math.min.apply(null,h.franjas.map(function(fr){return fr[0];}));return String(Math.floor(m/60)).padStart(2,'0')+':'+String(m%60).padStart(2,'0');}var mm=/(\d{1,2})[:.h](\d{2})/.exec(hor||'');return mm?String(+mm[1]).padStart(2,'0')+':'+mm[2]:'';}
+    function enlDef(t,f,rows){
+      var cfg=getCfg();if(!cfg)return'#';
+      var arr=rows.map(function(x){return{o:splitOT(x.ot).join(' / '),p:x.pedido||'',t:x.tecnica||'',i:x.centro||'',d:x.ubicacion||'',s:x.cliente||'',n:x.codigo||'',x:x.proyecto||'',a:splitTecnicos(x.tecnicos).filter(function(z){return z!==t;}).join(', ')};});
+      var base=location.origin+location.pathname.replace(/[^/]*$/,'')+'parte.html';
+      return base+'#'+encodeURIComponent(JSON.stringify({t:t,f:f,r:arr,re:YO.email||'',su:cfg.url,sk:cfg.key}));
+    }
+    A.correoParte=function(t){
+      var email=(S.correos&&S.correos.get(t))||'';
+      function abrir(){
+        var rows=S.filas.filter(function(x){return x.fecha===dia&&x.tipo==='PRODUCTIVO'&&splitTecnicos(x.tecnicos).indexOf(t)>=0;});
+        rows.sort(function(a,b){return(iniH(a.horario)||'99:99').localeCompare(iniH(b.horario)||'99:99');});
+        var su='Parte de trabajo · '+fmtCorto(dia)+' · '+t;
+        var L=['Hola '+t+',','','Este es tu parte de trabajo para el '+fmtDia(dia)+'.','','Trabajos previstos y hora de inicio:'];
+        rows.forEach(function(x){var p=[(x.cliente||'-')];if(x.centro)p.push(x.centro);if(x.ubicacion)p.push(x.ubicacion);if(x.tecnica)p.push(x.tecnica);var ini=iniH(x.horario);L.push('. '+p.join(' . ')+(ini?' - inicio '+ini+' h':''));});
+        L.push('','ABRIR, FIRMAR Y ENVIAR DESDE EL MOVIL:',enlDef(t,dia,rows),'');
+        L.push('Abre el enlace, firma con el dedo y pulsa "Firmar y enviar". Se guarda directamente, no tienes que descargar nada.','','Gracias.','Delegacion 1110 . Cadiz . OCA Global');
+        window.open('https://mail.google.com/mail/?view=cm&fs=1&to='+encodeURIComponent(email)+'&su='+encodeURIComponent(su)+'&body='+encodeURIComponent(L.join('\n')),'_blank');
+      }
+      if(!email){var e=prompt('Falta el correo de '+t+'. Escríbelo (se guardará):','');if(e===null)return;email=(e||'').trim();if(!email){toast('Sin correo no se puede enviar.');return;}if(puedoEditar()){DB.guardarCorreo(t,email).then(function(){S.correos.set(t,email);render();abrir();}).catch(function(err){toast('Error: '+esc(errTxt(err)));abrir();});return;}}
+      abrir();
+    };
+    A.enlaceParte=function(t){
+      var rows=S.filas.filter(function(x){return x.fecha===dia&&x.tipo==='PRODUCTIVO'&&splitTecnicos(x.tecnicos).indexOf(t)>=0;});
+      if(!rows.length){toast('Sin trabajos productivos.');return;}
+      window.open(enlDef(t,dia,rows),'_blank');
+    };
+  },4000);
+},400);
+})();
+</script>
