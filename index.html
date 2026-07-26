@@ -5291,3 +5291,49 @@ var g=setInterval(function(){
 },3000);
 })();
 </script>
+<script>
+/* TRAZA-OBRA · Seleccion de partes: unificar SELP y S.selPartes */
+(function(){
+var c=0;
+var g=setInterval(function(){
+  c++;if(c>90){clearInterval(g);return;}
+  if(typeof A==='undefined'||typeof S==='undefined'||!APP_LISTA)return;
+  if(!S.selPartes) S.selPartes={};
+  function tecsDe(f){
+    var m={};
+    S.filas.forEach(function(x){
+      if(x.fecha!==f||x.tipo!=='PRODUCTIVO')return;
+      splitTecnicos(x.tecnicos).forEach(function(t){if(t)m[t]=1;});
+    });
+    return Object.keys(m).sort();
+  }
+  A.selPar=function(t){
+    if(S.selPartes[t]) delete S.selPartes[t];
+    else S.selPartes[t]=1;
+    /* Sincronizar SELP si existe */
+    if(typeof SELP!=='undefined'){try{if(S.selPartes[t])SELP[t]=1;else delete SELP[t];}catch(e){}}
+    render();
+  };
+  A.selTodos=function(modo){
+    S.selPartes={};
+    if(typeof SELP!=='undefined'){try{for(var k in SELP)delete SELP[k];}catch(e){}}
+    var f=dia,tecs=tecsDe(f);
+    if(modo==='todos'){
+      tecs.forEach(function(t){S.selPartes[t]=1;});
+    } else if(modo==='pend'){
+      tecs.forEach(function(t){
+        if(!(S.partesEnviados||{})[f+'|'+t]) S.selPartes[t]=1;
+      });
+    }
+    /* Sincronizar SELP */
+    if(typeof SELP!=='undefined'){
+      try{
+        for(var k in SELP)delete SELP[k];
+        for(var k2 in S.selPartes)SELP[k2]=1;
+      }catch(e){}
+    }
+    render();
+  };
+},2000);
+})();
+</script>
