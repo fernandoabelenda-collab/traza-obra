@@ -5237,3 +5237,57 @@ var g=setInterval(function(){
 },2000);
 })();
 </script>
+<script>
+/* TRAZA-OBRA · Frecuencia: solo filtrar al enviar, no tocar seleccion */
+(function(){
+var FEST={'2026-01-01':1,'2026-01-06':1,'2026-02-28':1,'2026-04-02':1,'2026-04-03':1,'2026-05-01':1,'2026-08-15':1,'2026-10-12':1,'2026-11-02':1,'2026-12-07':1,'2026-12-08':1,'2026-12-25':1};
+function esLab(iso){if(!iso)return false;var dw=new Date(iso+'T12:00:00').getDay();if(dw===0||dw===6)return false;if(FEST[iso])return false;return true;}
+function lunesDe(iso){var d=new Date(iso+'T12:00:00');var dw=(d.getDay()+6)%7;return addDays(iso,-dw);}
+function ultLabSem(lun){for(var i=4;i>=0;i--){var d=addDays(lun,i);if(esLab(d))return d;}return addDays(lun,4);}
+function ultLabMes(iso){var ym=iso.slice(0,7);var y=+ym.split('-')[0],m=+ym.split('-')[1];var u=new Date(y,m,0).getDate();for(var i=u;i>=1;i--){var d=ym+'-'+String(i).padStart(2,'0');if(esLab(d))return d;}return ym+'-'+String(u).padStart(2,'0');}
+function frecDe(tec,ot){var k=tec+'|'+ot;var c=(S.frecPartes||{})[k];return c?c.f:'diario';}
+function esDueHoy(tec,ot,fecha){
+  var fr=frecDe(tec,ot);
+  if(fr==='diario')return true;
+  if(fr==='semanal')return fecha===ultLabSem(lunesDe(fecha));
+  if(fr==='mensual')return fecha===ultLabMes(fecha);
+  return true;
+}
+function tecTieneDueHoy(tec,fecha){
+  var rows=S.filas.filter(function(x){return x.fecha===fecha&&x.tipo==='PRODUCTIVO'&&splitTecnicos(x.tecnicos).indexOf(tec)>=0;});
+  var alguno=false;
+  rows.forEach(function(x){splitOT(x.ot).forEach(function(o){if(o&&esDueHoy(tec,o,fecha))alguno=true;});});
+  return alguno;
+}
+var c=0;
+var g=setInterval(function(){
+  c++;if(c>90){clearInterval(g);return;}
+  if(typeof A==='undefined'||typeof S==='undefined')return;
+  /* Solo parchar qEnv (la cola) para saltar no-due */
+  var _qEnvOrig=A.qEnv;
+  A.qEnv=function(){
+    if(typeof COLA==='undefined'&&typeof Q==='undefined'){if(_qEnvOrig)_qEnvOrig();return;}
+    var cola=typeof Q!=='undefined'?Q:COLA;
+    var idx=typeof QI!=='undefined'?QI:COLAI;
+    if(!cola||idx>=cola.length){if(_qEnvOrig)_qEnvOrig();return;}
+    var t=cola[idx];
+    if(!tecTieneDueHoy(t,dia)){
+      toast(esc(t)+' tiene parte semanal/mensual — hoy no le toca. Saltando…');
+      if(typeof QI!=='undefined')QI++;else if(typeof COLAI!=='undefined')COLAI++;
+      if(A.qSal)A.qSal();else if(A.colaSaltar)A.colaSaltar();
+      return;
+    }
+    if(_qEnvOrig)_qEnvOrig();
+  };
+  /* Parchar correoParte individual para avisar */
+  var _cpOrig=A.correoParte;
+  A.correoParte=function(t){
+    if(!tecTieneDueHoy(t,dia)){
+      if(!confirm(t+' tiene frecuencia semanal o mensual.\nHoy no es su día de envío.\n\n¿Enviar igualmente?'))return;
+    }
+    if(_cpOrig)_cpOrig(t);
+  };
+  clearInterval(g);
+},3000);
+})();
+</script>
