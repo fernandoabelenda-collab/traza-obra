@@ -4890,3 +4890,209 @@ var g=setInterval(function(){
 },2000);
 })();
 </script>
+<script>
+/* TRAZA-OBRA · Frecuencia de partes (diario/semanal/mensual) por tecnico+OT */
+(function(){
+var n=0;
+var t=setInterval(function(){
+  n++;if(n>80){clearInterval(t);return;}
+  if(typeof S==='undefined'||!S||!APP_LISTA)return;
+  clearInterval(t);
+
+S.frecPartes = S.frecPartes || {};
+var FEST={'2026-01-01':1,'2026-01-06':1,'2026-02-28':1,'2026-04-02':1,'2026-04-03':1,'2026-05-01':1,'2026-08-15':1,'2026-10-12':1,'2026-11-02':1,'2026-12-07':1,'2026-12-08':1,'2026-12-25':1};
+
+DB.loadFrecPartes = function(){
+  return SB.from('frecuencia_parte').select('tecnico,ot,frecuencia,config_por').then(function(r){
+    if(r.error) throw r.error;
+    var o={}; (r.data||[]).forEach(function(x){ o[x.tecnico+'|'+x.ot]={f:x.frecuencia,por:x.config_por}; }); return o;
+  });
+};
+DB.setFrecParte = function(tec,ot,frec){
+  return SB.from('frecuencia_parte').upsert({tecnico:tec,ot:ot,frecuencia:frec,config_por:YO.nombre||null},{onConflict:'tecnico,ot'}).then(function(r){
+    if(r.error) throw r.error;
+    S.frecPartes[tec+'|'+ot]={f:frec,por:YO.nombre};
+  });
+};
+DB.delFrecParte = function(tec,ot){
+  return SB.from('frecuencia_parte').delete().eq('tecnico',tec).eq('ot',ot).then(function(r){
+    if(r.error) throw r.error;
+    delete S.frecPartes[tec+'|'+ot];
+  });
+};
+
+function esLab(iso){
+  if(!iso) return false;
+  var dw=new Date(iso+'T12:00:00').getDay();
+  if(dw===0||dw===6) return false;
+  if(FEST[iso]) return false;
+  if(S.festLocal && S.festLocal[iso]) return false;
+  return true;
+}
+function ultimoLabSemana(isoLunes){
+  for(var i=4;i>=0;i--){
+    var d=addDays(isoLunes,i);
+    if(esLab(d)) return d;
+  }
+  return addDays(isoLunes,4);
+}
+function lunesDeSemana(iso){
+  var d=new Date(iso+'T12:00:00');
+  var dw=(d.getDay()+6)%7;
+  return addDays(iso,-dw);
+}
+function ultimoLabMes(iso){
+  var ym=iso.slice(0,7);
+  var y=+ym.split('-')[0], m=+ym.split('-')[1];
+  var ult=new Date(y,m,0).getDate();
+  for(var i=ult;i>=1;i--){
+    var d=ym+'-'+String(i).padStart(2,'0');
+    if(esLab(d)) return d;
+  }
+  return ym+'-'+String(ult).padStart(2,'0');
+}
+
+function frecDe(tec,ot){ var k=tec+'|'+ot; var c=S.frecPartes[k]; return c?c.f:'diario'; }
+function esEnvioDia(tec,ot,fecha){
+  var fr=frecDe(tec,ot);
+  if(fr==='diario') return {due:true,desde:fecha,hasta:fecha};
+  if(fr==='semanal'){
+    var lun=lunesDeSemana(fecha);
+    var vie=ultimoLabSemana(lun);
+    return {due:(fecha===vie),desde:lun,hasta:vie};
+  }
+  if(fr==='mensual'){
+    var ultM=ultimoLabMes(fecha);
+    var priM=fecha.slice(0,8)+'01';
+    return {due:(fecha===ultM),desde:priM,hasta:ultM};
+  }
+  return {due:true,desde:fecha,hasta:fecha};
+}
+
+/* Dialogo de configuracion */
+A.abrirFrecuencia = function(){
+  if(!puedoEditar()){toast('Solo coordinación o delegado.');return;}
+  var f=dia;
+  var combos={};
+  S.filas.forEach(function(x){
+    if(x.tipo!=='PRODUCTIVO') return;
+    splitTecnicos(x.tecnicos).forEach(function(t){
+      splitOT(x.ot).forEach(function(o){
+        if(!o) return;
+        var k=t+'|'+o;
+        if(!combos[k]) combos[k]={tec:t,ot:o,cli:x.cliente||'—'};
+      });
+    });
+  });
+  var lista=Object.keys(combos).map(function(k){return combos[k];}).sort(function(a,b){
+    return a.tec.localeCompare(b.tec)||a.ot.localeCompare(b.ot);
+  });
+  var h='<h3>Frecuencia de partes</h3><div class="mbody">';
+  h+='<div class="alert i">Configura si cada técnico + OT recibe parte <b>diario</b>, <b>semanal</b> (viernes) o <b>mensual</b> (último laborable del mes). Por defecto es diario.</div>';
+  h+='<table class="t"><thead><tr><th>Técnico</th><th>OT</th><th>Cliente</th><th>Frecuencia</th></tr></thead><tbody>';
+  lista.forEach(function(c,i){
+    var fr=frecDe(c.tec,c.ot);
+    h+='<tr><td><b>'+esc(c.tec)+'</b></td><td class="mono">'+esc(c.ot)+'</td><td class="dim">'+esc(c.cli)+'</td>';
+    h+='<td><select id="frsel'+i+'" data-tec="'+esc(c.tec)+'" data-ot="'+esc(c.ot)+'">';
+    h+='<option value="diario"'+(fr==='diario'?' selected':'')+'>Diario</option>';
+    h+='<option value="semanal"'+(fr==='semanal'?' selected':'')+'>Semanal (viernes)</option>';
+    h+='<option value="mensual"'+(fr==='mensual'?' selected':'')+'>Mensual</option>';
+    h+='</select></td></tr>';
+  });
+  h+='</tbody></table></div>';
+  h+='<div class="mfoot"><button class="btn" onclick="A.closeModal()">Cancelar</button>';
+  h+='<button class="btn pri" onclick="A.guardarFrecuencia('+lista.length+')">Guardar</button></div>';
+  openModal(h);
+};
+A.guardarFrecuencia = function(n){
+  var ops=[];
+  for(var i=0;i<n;i++){
+    var sel=document.getElementById('frsel'+i);
+    if(!sel) continue;
+    var tec=sel.getAttribute('data-tec'),ot=sel.getAttribute('data-ot'),fr=sel.value;
+    var actual=frecDe(tec,ot);
+    if(fr!==actual){
+      if(fr==='diario') ops.push(DB.delFrecParte(tec,ot));
+      else ops.push(DB.setFrecParte(tec,ot,fr));
+    }
+  }
+  if(!ops.length){closeModal();toast('Sin cambios.');return;}
+  Promise.all(ops).then(function(){
+    closeModal();render();toast('Frecuencia actualizada.');
+  }).catch(function(e){toast('Error: '+esc(errTxt(e)));});
+};
+
+/* Inyectar en la vista de partes: boton Frecuencia + badges + filtro */
+var inyectado={};
+setInterval(function(){
+  if(view!=='partes') return;
+  var main=document.getElementById('main');
+  if(!main) return;
+
+  /* Boton Frecuencia en la cabecera */
+  if(!main.querySelector('.btn-frec')){
+    var phead=main.querySelector('.phead .actions')||main.querySelector('.phead');
+    if(phead){
+      var bf=document.createElement('button');
+      bf.className='btn btn-frec';
+      bf.textContent='Frecuencia';
+      bf.onclick=function(){A.abrirFrecuencia();};
+      if(phead.classList.contains('actions')) phead.appendChild(bf);
+      else { var ac=phead.querySelector('.actions'); if(ac) ac.appendChild(bf); }
+    }
+  }
+
+  /* Badges de frecuencia e indicador de envio en cada fila */
+  var tabla=main.querySelector('table.t');
+  if(!tabla) return;
+  var filas=tabla.querySelectorAll('tbody tr');
+  var f=dia;
+  for(var j=0;j<filas.length;j++){
+    var fila=filas[j];
+    if(fila.querySelector('.frec-badge')) continue;
+    var bTec=fila.querySelector('td b');
+    if(!bTec) continue;
+    var tec=bTec.textContent.trim();
+    var otDivs=fila.querySelectorAll('.mono b');
+    var hayNoDue=false, hayDue=false;
+    otDivs.forEach(function(od){
+      if(od.closest('th')) return;
+      var otTxt=(od.textContent||'').trim().split(' / ');
+      otTxt.forEach(function(ot){
+        ot=ot.replace(/[^\d]/g,'');
+        if(!ot||ot.length<7) return;
+        var fr=frecDe(tec,ot);
+        if(fr!=='diario'){
+          var info=esEnvioDia(tec,ot,f);
+          var span=document.createElement('span');
+          span.className='frec-badge badge '+(fr==='semanal'?'b-pur':'b-acc');
+          span.style.cssText='margin-left:4px;font-size:9px';
+          span.textContent=fr.charAt(0).toUpperCase()+fr.slice(1);
+          if(!info.due){
+            span.textContent+=(' (envío '+fmtCorto(info.due?f:(fr==='semanal'?ultimoLabSemana(lunesDeSemana(f)):ultimoLabMes(f)))+')');
+            span.style.opacity='0.6';
+            hayNoDue=true;
+          } else {
+            span.textContent+=' ✓ HOY';
+            hayDue=true;
+          }
+          od.parentNode.appendChild(span);
+        } else {
+          hayDue=true;
+        }
+      });
+    });
+    /* Si TODAS las OT de este tecnico son no-due hoy, atenuar la fila */
+    if(hayNoDue && !hayDue){
+      fila.style.opacity='0.45';
+      fila.title='No es día de envío para las OT de este técnico';
+    }
+  }
+},1200);
+
+/* Cargar frecuencias al inicio */
+DB.loadFrecPartes().then(function(o){S.frecPartes=o;}).catch(function(){});
+
+},400);
+})();
+</script>
