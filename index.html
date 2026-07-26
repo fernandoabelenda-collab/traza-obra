@@ -5160,3 +5160,80 @@ var t=setInterval(function(){
 },400);
 })();
 </script>
+<script>
+/* TRAZA-OBRA · Frecuencia: bloquear envio en dias no-due */
+(function(){
+var FEST={'2026-01-01':1,'2026-01-06':1,'2026-02-28':1,'2026-04-02':1,'2026-04-03':1,'2026-05-01':1,'2026-08-15':1,'2026-10-12':1,'2026-11-02':1,'2026-12-07':1,'2026-12-08':1,'2026-12-25':1};
+function esLab(iso){
+  if(!iso)return false;var dw=new Date(iso+'T12:00:00').getDay();
+  if(dw===0||dw===6)return false;if(FEST[iso])return false;
+  if(S.festLocal&&S.festLocal[iso])return false;return true;
+}
+function lunesDe(iso){var d=new Date(iso+'T12:00:00');var dw=(d.getDay()+6)%7;return addDays(iso,-dw);}
+function ultLabSem(lun){for(var i=4;i>=0;i--){var d=addDays(lun,i);if(esLab(d))return d;}return addDays(lun,4);}
+function ultLabMes(iso){var ym=iso.slice(0,7);var y=+ym.split('-')[0],m=+ym.split('-')[1];var u=new Date(y,m,0).getDate();for(var i=u;i>=1;i--){var d=ym+'-'+String(i).padStart(2,'0');if(esLab(d))return d;}return ym+'-'+String(u).padStart(2,'0');}
+function frecDe(tec,ot){var k=tec+'|'+ot;var c=(S.frecPartes||{})[k];return c?c.f:'diario';}
+function esDueHoy(tec,ot,fecha){
+  var fr=frecDe(tec,ot);
+  if(fr==='diario')return true;
+  if(fr==='semanal'){var lun=lunesDe(fecha);return fecha===ultLabSem(lun);}
+  if(fr==='mensual')return fecha===ultLabMes(fecha);
+  return true;
+}
+function tecTieneDueHoy(tec,fecha){
+  var rows=S.filas.filter(function(x){return x.fecha===fecha&&x.tipo==='PRODUCTIVO'&&splitTecnicos(x.tecnicos).indexOf(tec)>=0;});
+  var alguno=false;
+  rows.forEach(function(x){
+    splitOT(x.ot).forEach(function(o){
+      if(o&&esDueHoy(tec,o,fecha))alguno=true;
+    });
+  });
+  return alguno;
+}
+
+var c=0;
+var g=setInterval(function(){
+  c++;if(c>90){clearInterval(g);return;}
+  if(typeof A==='undefined'||typeof S==='undefined')return;
+
+  /* Parchar selTodos para excluir no-due */
+  var _selTodos=A.selTodos;
+  A.selTodos=function(modo){
+    if(typeof _selTodos==='function')_selTodos(modo);
+    if(modo==='pend'||modo==='todos'){
+      var f=dia;
+      Object.keys(S.selPartes||{}).forEach(function(t){
+        if(!tecTieneDueHoy(t,f)){
+          delete S.selPartes[t];
+        }
+      });
+      render();
+    }
+  };
+
+  /* Parchar colaEnviar para saltar no-due */
+  var _colaEnviar=A.colaEnviar;
+  A.colaEnviar=function(){
+    var f=dia,sel=Object.keys(S.selPartes||{});
+    var antes=sel.length;
+    sel=sel.filter(function(t){return tecTieneDueHoy(t,f);});
+    var saltados=antes-sel.length;
+    S.selPartes={};
+    sel.forEach(function(t){S.selPartes[t]=1;});
+    if(saltados)toast(saltados+' técnico(s) saltado(s) por frecuencia semanal/mensual (hoy no les toca).');
+    if(typeof _colaEnviar==='function')_colaEnviar();
+  };
+
+  /* Parchar correoParte individual para avisar si no-due */
+  var _correoParte=A.correoParte;
+  A.correoParte=function(t){
+    var f=dia;
+    if(!tecTieneDueHoy(t,f)){
+      if(!confirm(t+' tiene frecuencia semanal o mensual para sus OT de hoy.\n\nHoy no es su día de envío. ¿Enviar igualmente?'))return;
+    }
+    if(typeof _correoParte==='function')_correoParte(t);
+  };
+
+},2000);
+})();
+</script>
