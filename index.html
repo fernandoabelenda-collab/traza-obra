@@ -5337,3 +5337,151 @@ var g=setInterval(function(){
 },2000);
 })();
 </script>
+<script>
+/* TRAZA-OBRA · Seleccion + Cola + Frecuencia — bloque unico definitivo */
+(function(){
+var FEST={'2026-01-01':1,'2026-01-06':1,'2026-02-28':1,'2026-04-02':1,'2026-04-03':1,'2026-05-01':1,'2026-08-15':1,'2026-10-12':1,'2026-11-02':1,'2026-12-07':1,'2026-12-08':1,'2026-12-25':1};
+function esLab(iso){if(!iso)return false;var dw=new Date(iso+'T12:00:00').getDay();if(dw===0||dw===6)return false;if(FEST[iso])return false;return true;}
+function lunesDe(iso){var d=new Date(iso+'T12:00:00');var dw=(d.getDay()+6)%7;return addDays(iso,-dw);}
+function ultLabSem(lun){for(var i=4;i>=0;i--){var d=addDays(lun,i);if(esLab(d))return d;}return addDays(lun,4);}
+function ultLabMes(iso){var ym=iso.slice(0,7);var y=+ym.split('-')[0],m=+ym.split('-')[1];var u=new Date(y,m,0).getDate();for(var i=u;i>=1;i--){var d=ym+'-'+String(i).padStart(2,'0');if(esLab(d))return d;}return ym+'-'+String(u).padStart(2,'0');}
+function frecDe(tec,ot){var k=tec+'|'+ot;var c=(S.frecPartes||{})[k];return c?c.f:'diario';}
+function esDueHoy(tec,ot,fecha){var fr=frecDe(tec,ot);if(fr==='diario')return true;if(fr==='semanal')return fecha===ultLabSem(lunesDe(fecha));if(fr==='mensual')return fecha===ultLabMes(fecha);return true;}
+function tecDueHoy(tec,fecha){var rows=S.filas.filter(function(x){return x.fecha===fecha&&x.tipo==='PRODUCTIVO'&&splitTecnicos(x.tecnicos).indexOf(tec)>=0;});var ok=false;rows.forEach(function(x){splitOT(x.ot).forEach(function(o){if(o&&esDueHoy(tec,o,fecha))ok=true;});});return ok;}
+function iniH(hor){var h=parseHorario(hor);if(h.franjas&&h.franjas.length){var m=Math.min.apply(null,h.franjas.map(function(fr){return fr[0];}));return String(Math.floor(m/60)).padStart(2,'0')+':'+String(m%60).padStart(2,'0');}var mm=/(\d{1,2})[:.h](\d{2})/.exec(hor||'');return mm?String(+mm[1]).padStart(2,'0')+':'+mm[2]:'';}
+function tecsDe(f){var m={};S.filas.forEach(function(x){if(x.fecha!==f||x.tipo!=='PRODUCTIVO')return;splitTecnicos(x.tecnicos).forEach(function(t){if(t)m[t]=1;});});return Object.keys(m).sort();}
+function filsDe(t,f){return S.filas.filter(function(x){return x.fecha===f&&x.tipo==='PRODUCTIVO'&&splitTecnicos(x.tecnicos).indexOf(t)>=0;});}
+function enlC(t,f){
+  var cfg=getCfg();if(!cfg)return'#';
+  var rows=filsDe(t,f);
+  var arr=rows.map(function(x){return{o:splitOT(x.ot).join(' / '),p:x.pedido||'',t:x.tecnica||'',i:x.centro||'',d:x.ubicacion||'',s:x.cliente||'',n:x.codigo||'',x:x.proyecto||'',a:splitTecnicos(x.tecnicos).filter(function(z){return z!==t;}).join(', ')};});
+  var base=location.origin+location.pathname.replace(/[^/]*$/,'')+'parte.html';
+  return base+'#'+encodeURIComponent(JSON.stringify({t:t,f:f,r:arr,re:YO.email||'',su:cfg.url,sk:cfg.key}));
+}
+function cuerpoC(t,f){
+  var rows=filsDe(t,f);
+  rows.sort(function(a,b){return(iniH(a.horario)||'99:99').localeCompare(iniH(b.horario)||'99:99');});
+  var L=['Hola '+t+',','','Este es tu parte de trabajo para el '+fmtDia(f)+'.','','Trabajos previstos y hora de inicio:'];
+  rows.forEach(function(x){var p=[(x.cliente||'-')];if(x.centro)p.push(x.centro);if(x.ubicacion)p.push(x.ubicacion);if(x.tecnica)p.push(x.tecnica);var ini=iniH(x.horario);L.push('· '+p.join(' · ')+(ini?' — inicio '+ini+' h':''));});
+  L.push('','ABRIR, FIRMAR Y ENVIAR DESDE EL MOVIL:',enlC(t,f),'');
+  L.push('Abre el enlace, firma con el dedo y pulsa "Firmar y enviar". Se guarda directamente.','','Gracias.','Delegación 1110 · Cádiz · OCA Global');
+  return L.join('\n');
+}
+function esEnviado(t,f){return !!(S.partesEnviados||{})[f+'|'+t];}
+
+/* --- Cola propia --- */
+var ZQ=[],ZI=0;
+function zPaso(){
+  var f=dia;
+  /* Saltar enviados y no-due automaticamente */
+  while(ZI<ZQ.length){
+    var t=ZQ[ZI];
+    if(esEnviado(t,f)){ZI++;continue;}
+    if(!tecDueHoy(t,f)){
+      toast(esc(t)+' — semanal/mensual, hoy no le toca.');
+      ZI++;continue;
+    }
+    break;
+  }
+  if(ZI>=ZQ.length){
+    closeModal();S.selPartes={};
+    try{for(var k in SELP)delete SELP[k];}catch(e){}
+    render();
+    toast('Cola terminada.');
+    return;
+  }
+  var t=ZQ[ZI];
+  var email=(S.correos&&S.correos.get(t))||'';
+  var rows=filsDe(t,f);
+  var h='<h3>Enviar partes · '+esc(fmtCorto(f))+'</h3><div class="mbody">';
+  h+='<div class="alert i">Parte <b>'+(ZI+1)+' de '+ZQ.length+'</b></div>';
+  h+='<div class="card"><div class="cb">';
+  h+='<div style="font-size:16px;font-weight:700">'+esc(t)+'</div>';
+  h+='<div class="dim" style="font-size:11.5px;margin-top:3px">'+(email?esc(email):'<b style="color:var(--bad)">sin correo</b>')+'</div>';
+  h+='<div style="margin-top:7px">';
+  rows.forEach(function(x){var ini=iniH(x.horario);h+='<div class="dim" style="font-size:11.5px">OT <b class="mono">'+esc(splitOT(x.ot).join(' / ')||'-')+'</b> · '+esc(x.cliente||'-')+(ini?' · inicio '+esc(ini)+' h':'')+'</div>';});
+  h+='</div></div></div></div>';
+  h+='<div class="mfoot">';
+  h+='<button class="btn" onclick="A.zCan()">Cerrar</button>';
+  h+='<button class="btn" onclick="A.zSal()">Saltar</button>';
+  h+='<button class="btn pri" onclick="A.zEnv()">Abrir Gmail y marcar enviado</button>';
+  h+='</div>';
+  openModal(h);
+}
+function zEnv(){
+  var f=dia,t=ZQ[ZI];
+  var email=(S.correos&&S.correos.get(t))||'';
+  if(!email){
+    var e=prompt('Falta el correo de '+t+'. Escríbelo:','');
+    if(e===null)return;email=(e||'').trim();
+    if(!email){toast('Sin correo.');return;}
+    DB.guardarCorreo(t,email).then(function(){S.correos.set(t,email);zEnv();}).catch(function(err){toast('Error: '+esc(errTxt(err)));});
+    return;
+  }
+  var su='Parte de trabajo · '+fmtCorto(f)+' · '+t;
+  window.open('https://mail.google.com/mail/?view=cm&fs=1&to='+encodeURIComponent(email)+'&su='+encodeURIComponent(su)+'&body='+encodeURIComponent(cuerpoC(t,f)),'_blank');
+  DB.marcarEnviado(f,t,email,'manual').then(function(){ZI++;setTimeout(zPaso,500);}).catch(function(){ZI++;setTimeout(zPaso,500);});
+}
+
+/* --- Guardian permanente --- */
+setInterval(function(){
+  if(typeof A==='undefined'||typeof S==='undefined'||!APP_LISTA)return;
+  if(!S.selPartes)S.selPartes={};
+
+  A.selPar=function(t){
+    if(S.selPartes[t])delete S.selPartes[t];else S.selPartes[t]=1;
+    try{if(typeof SELP!=='undefined'){if(S.selPartes[t])SELP[t]=1;else delete SELP[t];}}catch(e){}
+    render();
+  };
+
+  A.selTodos=function(modo){
+    S.selPartes={};
+    try{if(typeof SELP!=='undefined'){for(var k in SELP)delete SELP[k];}}catch(e){}
+    var f=dia,tecs=tecsDe(f);
+    tecs.forEach(function(t){
+      if(modo==='todos'){
+        S.selPartes[t]=1;
+      } else if(modo==='pend'){
+        if(!esEnviado(t,f)){
+          S.selPartes[t]=1;
+        }
+      }
+    });
+    try{if(typeof SELP!=='undefined'){for(var k2 in S.selPartes)SELP[k2]=1;}}catch(e){}
+    render();
+  };
+
+  A.colaEnviar=function(){
+    var f=dia,sel=Object.keys(S.selPartes);
+    if(!sel.length){toast('No has seleccionado ningún técnico.');return;}
+    ZQ=sel.filter(function(t){return filsDe(t,f).length;}).sort();
+    if(!ZQ.length){toast('Los seleccionados no tienen trabajo productivo ese día.');return;}
+    ZI=0;zPaso();
+  };
+  A.zEnv=zEnv;
+  A.zSal=function(){ZI++;zPaso();};
+  A.zCan=function(){closeModal();render();};
+
+  A.correoParte=function(t){
+    var email=(S.correos&&S.correos.get(t))||'';
+    if(!tecDueHoy(t,dia)){
+      if(!confirm(t+' tiene parte semanal/mensual.\nHoy no es su día de envío.\n\n¿Enviar igualmente?'))return;
+    }
+    if(!email){
+      var e=prompt('Falta el correo de '+t+'. Escríbelo:','');
+      if(e===null)return;email=(e||'').trim();
+      if(!email){toast('Sin correo.');return;}
+      if(puedoEditar()){DB.guardarCorreo(t,email).then(function(){S.correos.set(t,email);render();A.correoParte(t);}).catch(function(err){toast('Error: '+esc(errTxt(err)));});return;}
+    }
+    var f=dia;
+    var su='Parte de trabajo · '+fmtCorto(f)+' · '+t;
+    window.open('https://mail.google.com/mail/?view=cm&fs=1&to='+encodeURIComponent(email)+'&su='+encodeURIComponent(su)+'&body='+encodeURIComponent(cuerpoC(t,f)),'_blank');
+  };
+
+  A.enlaceParte=function(t){
+    if(!filsDe(t,dia).length){toast('Sin trabajos productivos.');return;}
+    window.open(enlC(t,dia),'_blank');
+  };
+},1500);
+})();
+</script>
