@@ -5096,3 +5096,67 @@ DB.loadFrecPartes().then(function(o){S.frecPartes=o;}).catch(function(){});
 },400);
 })();
 </script>
+<script>
+/* TRAZA-OBRA · Boton Frecuencia visible + copiar dia anterior salta finde */
+(function(){
+var n=0;
+var t=setInterval(function(){
+  n++;if(n>80){clearInterval(t);return;}
+  if(typeof S==='undefined'||!S||!APP_LISTA)return;
+  clearInterval(t);
+
+  /* --- Copiar dia anterior: salta finde y festivos hacia atras --- */
+  A.dupDia = async function(){
+    if(!puedoEditar()){toast('Tu rol es de solo consulta.');return;}
+    var src=null;
+    for(var i=1;i<=7;i++){
+      var d=addDays(dia,-i);
+      var hay=S.filas.filter(function(f){return f.fecha===d;});
+      if(hay.length){src=d;break;}
+    }
+    if(!src){toast('No hay filas en los 7 días anteriores.');return;}
+    var o=S.filas.filter(function(f){return f.fecha===src;});
+    if(!o.length){toast('No hay filas el '+fmtCorto(src)+'.');return;}
+    if(!confirm('Copiar '+o.length+' fila(s) del '+fmtCorto(src)+' al '+fmtCorto(dia)+'?'))return;
+    var nuevas=o.map(function(f){var c=Object.assign({},f,{fecha:dia,informes:''});delete c.id;return c;});
+    try{
+      var d2=await DB.insertMany(nuevas);
+      d2.forEach(function(x){if(!S.filas.some(function(y){return y.id===x.id;}))S.filas.push(x);});
+      inval();pintaFilas();toast(d2.length+' fila(s) copiadas del '+fmtCorto(src)+' al '+fmtCorto(dia)+'.');
+    }catch(e){toast('No se pudieron copiar: '+esc(errTxt(e)));}
+  };
+
+  /* --- Boton Frecuencia: inyectar en la barra de partes --- */
+  setInterval(function(){
+    if(view!=='partes')return;
+    var main=document.getElementById('main');
+    if(!main)return;
+    if(main.querySelector('.btn-frec'))return;
+    /* Buscar la barra de acciones (gbar) */
+    var gbar=main.querySelector('.gbar');
+    if(gbar){
+      var sep=document.createElement('div');
+      sep.className='gsep';
+      gbar.appendChild(sep);
+      var bf=document.createElement('button');
+      bf.className='btn sm btn-frec';
+      bf.textContent='Frecuencia';
+      bf.onclick=function(){A.abrirFrecuencia();};
+      gbar.appendChild(bf);
+      return;
+    }
+    /* Si no hay gbar, buscar phead */
+    var ph=main.querySelector('.phead');
+    if(ph){
+      var bf2=document.createElement('button');
+      bf2.className='btn btn-frec';
+      bf2.style.cssText='margin-left:8px';
+      bf2.textContent='Frecuencia';
+      bf2.onclick=function(){A.abrirFrecuencia();};
+      ph.appendChild(bf2);
+    }
+  },1000);
+
+},400);
+})();
+</script>
