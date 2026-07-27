@@ -1859,7 +1859,16 @@ function ultLabSem(lun){ for(var i=4;i>=0;i--){ var d=addDays(lun,i); if(fEsLab(
 function ultLabMes(iso){ var ym=iso.slice(0,7); var y=+ym.split('-')[0],m=+ym.split('-')[1]; var u=new Date(y,m,0).getDate(); for(var i=u;i>=1;i--){ var d=ym+'-'+String(i).padStart(2,'0'); if(fEsLab(d)) return d; } return ym+'-'+String(u).padStart(2,'0'); }
 function frecDe(tec,ot){ var c=(S.frecPartes||{})[tec+'|'+ot]; return c?c.f:'diario'; }
 function esDueHoy(tec,ot,fecha){ var fr=frecDe(tec,ot); if(fr==='diario') return true; if(fr==='semanal') return fecha===ultLabSem(lunesDe(fecha)); if(fr==='mensual') return fecha===ultLabMes(fecha); return true; }
-function tecDueHoy(tec,fecha){ var ok=false; filsDe(tec,fecha).forEach(function(x){ splitOT(x.ot).forEach(function(o){ if(o&&esDueHoy(tec,o,fecha)) ok=true; }); }); return ok; }
+function tecDueHoy(tec,fecha){
+  var rows=filsDe(tec,fecha); if(!rows.length) return false;
+  var due=false;
+  rows.forEach(function(x){
+    var ots=splitOT(x.ot).filter(function(o){ return o && /\d/.test(o); });
+    if(!ots.length){ due=true; return; }                 // sin OT (o "OT -") => diario por defecto => enviable
+    ots.forEach(function(o){ if(esDueHoy(tec,o,fecha)) due=true; });
+  });
+  return due;
+}
 
 /* Ausencias: días laborables por técnico (excluye finde, festivo nac. y festivo local por técnico) */
 function esLaborable(iso,tec){ if(!iso) return false; var dw=new Date(iso+'T12:00:00').getDay(); if(dw===0||dw===6) return false; if(FEST_NOM[iso]) return false; if(S.festLocal && S.festLocal[iso+'|'+tec]) return false; return true; }
@@ -2524,7 +2533,15 @@ A.selPar=function(t){ if(S.selPartes[t]) delete S.selPartes[t]; else S.selPartes
 A.selTodos=function(modo){
   S.selPartes={};
   var f=dia, tecs=tecsDe(f);
-  tecs.forEach(function(t){ if(modo==='todos'){ S.selPartes[t]=1; } else if(modo==='pend'){ if(!(S.partesEnviados||{})[f+'|'+t]) S.selPartes[t]=1; } });
+  tecs.forEach(function(t){
+    if(modo==='todos'){ S.selPartes[t]=1; }                                   // TODOS = override manual, ignora frecuencia
+    else if(modo==='pend'){ if(!(S.partesEnviados||{})[f+'|'+t] && tecDueHoy(t,f)) S.selPartes[t]=1; } // PENDIENTES = pendiente Y que toque por frecuencia
+  });
+  if(modo==='pend' && !Object.keys(S.selPartes).length){
+    var pendTot=tecs.filter(function(t){ return !(S.partesEnviados||{})[f+'|'+t]; }).length;
+    if(pendTot) toast('Hoy no toca enviar a nadie por frecuencia (semanal/mensual). Pulsa "Todos" para enviar igualmente.');
+    else toast('No hay partes pendientes para hoy.');
+  }
   render();
 };
 var ZQ=[],ZI=0;
@@ -2532,11 +2549,10 @@ function zPaso(){
   var f=dia;
   while(ZI<ZQ.length){
     var t=ZQ[ZI];
-    if((S.partesEnviados||{})[f+'|'+t]){ ZI++; continue; }
-    if(!tecDueHoy(t,f)){ toast(esc(t)+' — semanal/mensual, hoy no le toca.'); ZI++; continue; }
+    if((S.partesEnviados||{})[f+'|'+t]){ ZI++; continue; }   // solo salta lo YA enviado hoy
     break;
   }
-  if(ZI>=ZQ.length){ closeModal(); S.selPartes={}; render(); toast('Cola terminada.'); return; }
+  if(ZI>=ZQ.length){ closeModal(); S.selPartes={}; render(); toast('Cola terminada: no quedaban partes por enviar.'); return; }
   var tc=ZQ[ZI];
   var email=(S.correos&&S.correos.get(tc))||'';
   var rows=filsDe(tc,f);
