@@ -1859,16 +1859,22 @@ function ultLabSem(lun){ for(var i=4;i>=0;i--){ var d=addDays(lun,i); if(fEsLab(
 function ultLabMes(iso){ var ym=iso.slice(0,7); var y=+ym.split('-')[0],m=+ym.split('-')[1]; var u=new Date(y,m,0).getDate(); for(var i=u;i>=1;i--){ var d=ym+'-'+String(i).padStart(2,'0'); if(fEsLab(d)) return d; } return ym+'-'+String(u).padStart(2,'0'); }
 function frecDe(tec,ot){ var c=(S.frecPartes||{})[tec+'|'+ot]; return c?c.f:'diario'; }
 function esDueHoy(tec,ot,fecha){ var fr=frecDe(tec,ot); if(fr==='diario') return true; if(fr==='semanal') return fecha===ultLabSem(lunesDe(fecha)); if(fr==='mensual') return fecha===ultLabMes(fecha); return true; }
-function tecDueHoy(tec,fecha){
-  var rows=filsDe(tec,fecha); if(!rows.length) return false;
-  var due=false;
-  rows.forEach(function(x){
+/* Filas del técnico que TOCAN hoy, filtradas POR OT. Esto es lo que se envía/firma.
+   - Fila sin OT (o "OT -")            => diaria por defecto => se conserva entera.
+   - Fila con varias OT                => se conservan solo las que tocan (p.ej. quita la semanal un lunes).
+   - Fila cuyas OT no tocan ninguna    => se descarta hoy. */
+function filsDueDe(t,f){
+  return filsDe(t,f).map(function(x){
     var ots=splitOT(x.ot).filter(function(o){ return o && /\d/.test(o); });
-    if(!ots.length){ due=true; return; }                 // sin OT (o "OT -") => diario por defecto => enviable
-    ots.forEach(function(o){ if(esDueHoy(tec,o,fecha)) due=true; });
-  });
-  return due;
+    if(!ots.length) return x;                                        // sin OT: diaria
+    var due=ots.filter(function(o){ return esDueHoy(t,o,f); });
+    if(!due.length) return null;                                     // hoy no toca ninguna OT de esta fila
+    if(due.length===ots.length) return x;                           // todas tocan
+    return Object.assign({},x,{ot:due.join(' / ')});                // solo las que tocan
+  }).filter(Boolean);
 }
+/* Un técnico "toca hoy" si le queda al menos una fila que enviar */
+function tecDueHoy(tec,fecha){ return filsDueDe(tec,fecha).length>0; }
 
 /* Ausencias: días laborables por técnico (excluye finde, festivo nac. y festivo local por técnico) */
 function esLaborable(iso,tec){ if(!iso) return false; var dw=new Date(iso+'T12:00:00').getDay(); if(dw===0||dw===6) return false; if(FEST_NOM[iso]) return false; if(S.festLocal && S.festLocal[iso+'|'+tec]) return false; return true; }
@@ -2031,13 +2037,13 @@ function parteFirmadoHTML(f,tec,firma){
    --------------------------------------------------------------------------- */
 function enlaceParteURL(t,f){
   var cfg=getCfg(); if(!cfg) return '#';
-  var rows=filsDe(t,f);
+  var rows=filsDueDe(t,f);
   var arr=rows.map(function(x){ return {o:splitOT(x.ot).join(' / '),p:x.pedido||'',t:x.tecnica||'',i:x.centro||'',d:x.ubicacion||'',s:x.cliente||'',n:x.codigo||'',x:x.proyecto||'',a:splitTecnicos(x.tecnicos).filter(function(z){return z!==t;}).join(', ')}; });
   var base=location.origin+location.pathname.replace(/[^/]*$/,'')+'parte.html';
   return base+'#'+encodeURIComponent(JSON.stringify({t:t,f:f,r:arr,re:YO.email||'',su:cfg.url,sk:cfg.key}));
 }
 function cuerpoCorreo(t,f){
-  var rows=filsDe(t,f);
+  var rows=filsDueDe(t,f);
   var L=['Hola '+t+',','','Este es tu parte de trabajo para el '+fmtDia(f)+'.','','Trabajos previstos y hora de inicio:'];
   rows.forEach(function(x){ var p=[(x.cliente||'-')]; if(x.centro)p.push(x.centro); if(x.ubicacion)p.push(x.ubicacion); if(x.tecnica)p.push(x.tecnica); var ini=iniH(x.horario); L.push('· '+p.join(' · ')+(ini?' — inicio '+ini+' h':'')); });
   L.push('','ABRIR, FIRMAR Y ENVIAR DESDE EL MÓVIL:',enlaceParteURL(t,f),'');
@@ -2475,8 +2481,12 @@ A.guardarFestLocal=function(){
    15) HANDLERS — Parte (documento), correo, enlace, firma, recepción
    --------------------------------------------------------------------------- */
 A.generarPartes=function(tec){
-  var rows=filsDe(tec,dia);
-  if(!rows.length){ toast('Ese técnico no tiene trabajos productivos ese día.'); return; }
+  var rows=filsDueDe(tec,dia);
+  if(!rows.length){
+    if(filsDe(tec,dia).length) toast('Hoy no le toca ningún parte (sus OT son semanales/mensuales). Cambia la frecuencia a Diario si necesitas emitirlo hoy.');
+    else toast('Ese técnico no tiene trabajos productivos ese día.');
+    return;
+  }
   var w=window.open('','_blank');
   if(!w){ toast('El navegador bloqueó la ventana. Permite ventanas emergentes y reinténtalo.'); return; }
   var d='<!DOCTYPE html><html lang="es"><head><meta charset="utf-8"><title>Parte '+esc(tec)+'</title><style>'+parteCSSbase()+'</style></head><body>';
@@ -2510,7 +2520,7 @@ A.descargarFirmado=function(tec){
   toast('Cargando firma…');
   DB.getFirma(dia,tec).then(function(firma){
     if(!firma){ toast('No hay firma de '+esc(tec)+' para este día.'); return; }
-    var rows=filsDe(tec,dia);
+    var rows=filsDueDe(tec,dia);
     if(!rows.length){ toast('Sin trabajos productivos.'); return; }
     var w=window.open('','_blank');
     if(!w){ toast('Permite ventanas emergentes.'); return; }
@@ -2555,7 +2565,7 @@ function zPaso(){
   if(ZI>=ZQ.length){ closeModal(); S.selPartes={}; render(); toast('Cola terminada: no quedaban partes por enviar.'); return; }
   var tc=ZQ[ZI];
   var email=(S.correos&&S.correos.get(tc))||'';
-  var rows=filsDe(tc,f);
+  var rows=filsDueDe(tc,f);
   var h='<h3>Enviar partes · '+esc(fmtCorto(f))+'</h3><div class="mbody">';
   h+='<div class="alert i">Parte <b>'+(ZI+1)+' de '+ZQ.length+'</b></div>';
   h+='<div class="card"><div class="cb"><div style="font-size:16px;font-weight:700">'+esc(tc)+'</div>';
@@ -2568,7 +2578,7 @@ function zPaso(){
 A.colaEnviar=function(){
   var f=dia, sel=Object.keys(S.selPartes);
   if(!sel.length){ toast('No has seleccionado ningún técnico.'); return; }
-  ZQ=sel.filter(function(t){ return filsDe(t,f).length; }).sort();
+  ZQ=sel.filter(function(t){ return filsDueDe(t,f).length; }).sort();
   if(!ZQ.length){ toast('Los seleccionados no tienen trabajo productivo ese día.'); return; }
   ZI=0; zPaso();
 };
