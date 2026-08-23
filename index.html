@@ -237,12 +237,12 @@ let CANAL=null, ONLINE=false;
 const puedoEditar = () => ['delegado','coordinacion'].includes(YO.rol);
 const soyDelegado = () => YO.rol==='delegado';
 
-const CAMPOS='id,fecha,tecnicos,tipo,cliente,centro,proyecto,ubicacion,tecnica,codigo,horario,unidades,udmedida,ot,pedido,estado,prod,esti,informes,obs,creado_en,ts,por,creado_por,editando_por,editando_hasta';
+const CAMPOS='id,fecha,tecnicos,tipo,cliente,centro,proyecto,ubicacion,tecnica,codigo,horario,unidades,udmedida,ot,pedido,estado,prod,esti,informes,obs,creado_en,ts,por,creado_por,editando_por,editando_hasta,dieta';
 
 function limpiaFila(f){ // deja solo lo que existe en la tabla
   const o={};
   ['fecha','tecnicos','tipo','cliente','centro','proyecto','ubicacion','tecnica','codigo',
-   'horario','unidades','udmedida','ot','pedido','estado','prod','esti','informes','obs']
+   'horario','unidades','udmedida','ot','pedido','estado','prod','esti','informes','obs','dieta']
    .forEach(k=>{ let v=f[k];
      if(['unidades','prod','esti'].includes(k)) o[k]=(v===''||v==null)?null:Number(v);
      else o[k]=v==null?'':String(v); });
@@ -372,6 +372,7 @@ const COLS=[
  {k:'tecnica',  t:'TECNICA',      w:106, ty:'text', dl:'dl_tecnica', g:'base'},
  {k:'codigo',   t:'CÓD. APLICABLE',w:132, ty:'sel', op:['',...CODIGOS], g:'ext'},
  {k:'horario',  t:'HORARIO',      w:108, ty:'text', dl:'dl_horario', g:'base'},
+ {k:'dieta',    t:'DIETA',        w:60,  ty:'sel', op:['','1'], g:'base'},
  {k:'horas',    t:'HORAS',        w:52,  ty:'ro',   num:1, g:'base'},
  {k:'unidades', t:'UNIDADES',     w:66,  ty:'num',  g:'ext'},
  {k:'udmedida', t:'UD.',          w:62,  ty:'sel', op:['',...UNIDADES], g:'ext'},
@@ -387,7 +388,7 @@ function colsVis(){ return COLS.filter(c=> c.g==='base' || (c.g==='ext'&&S.cfg.c
 
 /* ---------- Estado ---------- */
 const FILA0=()=>({id:uid('f_'),fecha:'',tecnicos:'',tipo:'PRODUCTIVO',cliente:'',centro:'',proyecto:'',ubicacion:'',
-  tecnica:'',codigo:'',horario:'',unidades:null,udmedida:'',ot:'',pedido:'',estado:'',prod:null,esti:null,informes:'',obs:'',
+  tecnica:'',codigo:'',horario:'',unidades:null,udmedida:'',ot:'',pedido:'',estado:'',prod:null,esti:null,informes:'',obs:'',dieta:'',
   ts:now(),por:''});
 let S={meta:{app:'TRAZA-OBRA',v:4,created:now()},cfg:{eur:false,colExt:true},
   filas:[],rechazos:[],imports:[],perfiles:[],informes:[],control:[]};
