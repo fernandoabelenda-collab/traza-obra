@@ -1998,6 +1998,9 @@ if(!S.__dlTecWrap && typeof refreshDL==='function'){
   refreshDL=function(){ try{ _refreshDL_base(); }catch(e){}
     var e2=document.getElementById('dl_tecnicos'); var opts=tecActivos(); if(e2 && opts.length){ e2.innerHTML=opts.map(function(v){return '<option value="'+esc(v)+'">';}).join(''); }
     var e3=document.getElementById('dl_clientes'); var oc=cliActivos(); if(e3 && oc.length){ e3.innerHTML=oc.map(function(v){return '<option value="'+esc(v)+'">';}).join(''); }
+    /* Técnica y horario: SIEMPRE se sustituye (arrancan limpios; aprenden lo que escribes) */
+    var et=document.getElementById('dl_tecnica'); if(et){ et.innerHTML=((S.opciones&&S.opciones.tecnica)?S.opciones.tecnica.slice().sort(function(a,b){return String(a).localeCompare(String(b),'es');}):[]).map(function(v){return '<option value="'+esc(v)+'">';}).join(''); }
+    var eh=document.getElementById('dl_horario'); if(eh){ eh.innerHTML=((S.opciones&&S.opciones.horario)?S.opciones.horario.slice().sort(function(a,b){return String(a).localeCompare(String(b),'es');}):[]).map(function(v){return '<option value="'+esc(v)+'">';}).join(''); }
   };
   try{ A.refreshDL=refreshDL; }catch(e){}
 }
@@ -2028,6 +2031,12 @@ if(!S.__svTecWrap && typeof setVal==='function'){
       v=ccc[cn];                                  // nombre canónico
       var ub=cliUbic(v);                          // ubicación del maestro (si la hay)
       if(ub){ var r=await _setVal_base(f,'cliente',v); try{ await _setVal_base(f,'ubicacion',ub); }catch(e){} return r; }
+    }
+    if((k==='tecnica'||k==='horario') && String(v||'').trim()!==''){
+      var rr=await _setVal_base(f,k,v);
+      var val=String(v).trim(); var lst=S.opciones[k]||(S.opciones[k]=[]);
+      if(lst.indexOf(val)<0){ lst.push(val); try{ DB.addOpcion(k,val); }catch(e){} try{ refreshDL(); }catch(e){} }
+      return rr;
     }
     return _setVal_base(f,k,v);
   };
@@ -2118,6 +2127,48 @@ A.gcUbic=function(nombre){ if(!puedoEditar()){ toast('Sin permiso.'); return; }
   var actual=cliUbic(nombre); var nueva=prompt('Ubicación de '+nombre+':',actual);
   if(nueva===null) return;
   DB.updateUbicCliente(nombre,nueva.trim()).then(function(){ return DB.loadClientes(); }).then(function(d){ S.clientesMaestro=d; render(); toast('Ubicación actualizada.'); }).catch(function(e){ toast('No se pudo: '+esc(errTxt(e))); }); };
+
+/* =====================================================================
+   OCULTAR COLUMNAS (informe, cód. aplicable, unidades, ud.) del grid.
+   No borra datos ni toca el base: solo deja de mostrarlas.
+   ===================================================================== */
+if(typeof colsVis==='function' && !S.__colsVisWrap){
+  S.__colsVisWrap=true;
+  var _colsVis_base=colsVis;
+  var COL_OCULTAS={informes:1,codigo:1,unidades:1,udmedida:1};
+  colsVis=function(){ return _colsVis_base().filter(function(c){ return !COL_OCULTAS[c.k]; }); };
+  try{ A.colsVis=colsVis; }catch(e){}
+}
+
+/* =====================================================================
+   DESPLEGABLES QUE APRENDEN: TÉCNICA y HORARIO (arrancan limpios)
+   Tabla: opcion_maestro(campo, valor). Ignora el ruido histórico.
+   ===================================================================== */
+S.opciones = S.opciones || {tecnica:[],horario:[]};
+DB.loadOpciones=function(){ return SB.from('opcion_maestro').select('campo,valor').then(function(r){ if(r.error) throw r.error; var o={tecnica:[],horario:[]}; (r.data||[]).forEach(function(x){ (o[x.campo]=o[x.campo]||[]).push(x.valor); }); return o; }); };
+DB.addOpcion=function(campo,valor){ return SB.from('opcion_maestro').upsert({campo:campo,valor:valor},{onConflict:'campo,valor'}).then(function(r){ if(r.error) throw r.error; }); };
+DB.delOpcion=function(campo,valor){ return SB.from('opcion_maestro').delete().eq('campo',campo).eq('valor',valor).then(function(r){ if(r.error) throw r.error; }); };
+function opcSort(a){ return (a||[]).slice().sort(function(x,y){ return String(x).localeCompare(String(y),'es'); }); }
+
+function vListas(){
+  if(!puedoEditar()){ $('main').innerHTML='<div class="card"><div class="empty">Vista de coordinación / delegado.</div></div>'; return; }
+  var bloque=function(campo,titulo,ayuda){
+    var arr=opcSort(S.opciones[campo]);
+    var filas=arr.length?arr.map(function(v){ return '<tr><td class="mono">'+esc(v)+'</td><td class="tar"><button class="btn sm dang" onclick="A.opcDel(\''+campo+'\',\''+esc(v).replace(/'/g,"\\'")+'\')">Quitar</button></td></tr>'; }).join(''):'<tr><td colspan="2"><div class="empty">Vacío. Se irá llenando a medida que escribas en la planificación.</div></td></tr>';
+    return '<div class="card"><div class="ch">'+esc(titulo)+' ('+arr.length+')</div><div class="cb"><p class="dim" style="font-size:12px;margin:0 0 8px">'+ayuda+'</p>'+
+      '<div style="display:flex;gap:8px;margin-bottom:8px"><input id="opc_'+campo+'" placeholder="Añadir '+esc(titulo.toLowerCase())+'…" style="flex:1;padding:7px 9px;border:1px solid var(--line);border-radius:8px"><button class="btn pri" onclick="A.opcAdd(\''+campo+'\')">Añadir</button></div>'+
+      '<table class="t"><thead><tr><th>Valor</th><th class="tar" style="width:80px"></th></tr></thead><tbody>'+filas+'</tbody></table></div></div>';
+  };
+  var cab='<div class="phead"><div><h2>Listas: técnica y horario</h2><div class="sub">Estos desplegables arrancan limpios y <b>aprenden</b> lo que escribes en la planificación. Aquí puedes quitar un valor mal escrito o añadir uno a mano.</div></div><div class="actions"><button class="btn" onclick="A.recargarOpciones()">Actualizar</button></div></div>';
+  $('main').innerHTML=cab+
+    bloque('tecnica','Técnicas de ensayo','Ej.: UT, RT, MT, PT, VT, ... Escribe la técnica en la columna TECNICA y se guardará aquí.')+
+    bloque('horario','Horarios','Formato: <b>07:00-15:00</b>. Turno partido: <b>07:00-13:00 / 14:00-19:00</b>. Para horas extra, escribe el horario real (p. ej. <b>06:00-18:00</b>) y el programa calcula el exceso solo.');
+}
+A.recargarOpciones=function(){ DB.loadOpciones().then(function(o){ S.opciones=o; refreshDL(); render(); toast('Listas actualizadas.'); }).catch(function(e){ toast('No se pudo: '+esc(errTxt(e))); }); };
+A.opcAdd=function(campo){ if(!puedoEditar()){ toast('Sin permiso.'); return; } var el=$('opc_'+campo); var v=el?el.value.trim():''; if(!v){ toast('Escribe un valor.'); return; }
+  DB.addOpcion(campo,v).then(function(){ (S.opciones[campo]=S.opciones[campo]||[]); if(S.opciones[campo].indexOf(v)<0) S.opciones[campo].push(v); refreshDL(); render(); toast('Añadido.'); }).catch(function(e){ toast('No se pudo: '+esc(errTxt(e))); }); };
+A.opcDel=function(campo,valor){ if(!puedoEditar()){ toast('Sin permiso.'); return; }
+  DB.delOpcion(campo,valor).then(function(){ S.opciones[campo]=(S.opciones[campo]||[]).filter(function(x){return x!==valor;}); refreshDL(); render(); toast('Quitado.'); }).catch(function(e){ toast('No se pudo: '+esc(errTxt(e))); }); };
 
 /* ---------------------------------------------------------------------------
    3) GENERADORES DE PARTE (documento imprimible / PDF)
@@ -2577,6 +2628,7 @@ render=function(){
   if(view==='partes'){ renderNav(); if($('kpis'))$('kpis').innerHTML=''; vPartes(); return; }
   if(view==='gestec'){ renderNav(); if($('kpis'))$('kpis').innerHTML=''; vGesTec(); return; }
   if(view==='gescli'){ renderNav(); if($('kpis'))$('kpis').innerHTML=''; vGesCli(); return; }
+  if(view==='listas'){ renderNav(); if($('kpis'))$('kpis').innerHTML=''; vListas(); return; }
   return _baseRender.apply(this,arguments);
 };
 A.render=render;
@@ -2863,9 +2915,11 @@ navAdd({id:'calendario',t:'Calendario',ic:'cal'},false);
     navAdd({id:'partes',t:'Partes de trabajo',ic:'doc'},false);
     if(puedoEditar()) navAdd({id:'gestec',t:'Técnicos',ic:'doc'},false);
     if(puedoEditar()) navAdd({id:'gescli',t:'Clientes',ic:'doc'},false);
+    if(puedoEditar()) navAdd({id:'listas',t:'Listas',ic:'doc'},false);
     try{ renderNav(); }catch(e){}
     DB.loadTecnicos().then(function(d){ S.tecnicosMaestro=d; try{refreshDL();}catch(e){} if(view==='gestec') render(); }).catch(function(){});
     DB.loadClientes().then(function(d){ S.clientesMaestro=d; try{refreshDL();}catch(e){} if(view==='gescli') render(); }).catch(function(){});
+    DB.loadOpciones().then(function(o){ S.opciones=o; try{refreshDL();}catch(e){} if(view==='listas') render(); }).catch(function(){});
     /* Carga de datos (cada uno tolerante a fallo) */
     NOTAS.load().then(function(d){ S.notas=d; if(view==='calendario') render(); avisoRecordatorios(); }).catch(function(){});
     DB.loadLineasSinInforme().then(function(s){ S.lineasCerradas=s; if(view==='control') render(); }).catch(function(){});
