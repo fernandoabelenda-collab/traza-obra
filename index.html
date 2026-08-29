@@ -1947,6 +1947,85 @@ DB.loadFrecPartes=function(){ return SB.from('frecuencia_parte').select('tecnico
 DB.setFrecParte=function(tec,ot,frec){ return SB.from('frecuencia_parte').upsert({tecnico:tec,ot:ot,frecuencia:frec,config_por:YO.nombre||null},{onConflict:'tecnico,ot'}).then(function(r){ if(r.error) throw r.error; S.frecPartes[tec+'|'+ot]={f:frec,por:YO.nombre}; }); };
 DB.delFrecParte=function(tec,ot){ return SB.from('frecuencia_parte').delete().eq('tecnico',tec).eq('ot',ot).then(function(r){ if(r.error) throw r.error; delete S.frecPartes[tec+'|'+ot]; }); };
 
+/* =====================================================================
+   MAESTRO DE TÉCNICOS  (desplegable + validación estricta + alta/baja)
+   Tabla: tecnico_maestro(nombre, categoria, activo)
+   Todo aditivo; no modifica el código base (envuelve refreshDL y setVal).
+   ===================================================================== */
+S.tecnicosMaestro = S.tecnicosMaestro || [];
+function normNom(x){ return String(x==null?'':x).toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/\s+/g,' ').trim(); }
+function tecActivos(){ return (S.tecnicosMaestro||[]).filter(function(t){return t.activo;}).map(function(t){return t.nombre;}).sort(function(a,b){return String(a).localeCompare(String(b),'es');}); }
+function tecSetNorm(){ var s={}; (S.tecnicosMaestro||[]).forEach(function(t){ if(t.activo) s[normNom(t.nombre)]=1; }); return s; }
+function tecCanon(){ var m={}; (S.tecnicosMaestro||[]).forEach(function(t){ if(t.activo) m[normNom(t.nombre)]=t.nombre; }); return m; }
+
+DB.loadTecnicos=function(){ return SB.from('tecnico_maestro').select('nombre,categoria,activo').then(function(r){ if(r.error) throw r.error; return r.data||[]; }); };
+DB.addTecnico=function(nombre,categoria){ return SB.from('tecnico_maestro').upsert({nombre:nombre,categoria:categoria||'INTERNO',activo:true},{onConflict:'nombre'}).then(function(r){ if(r.error) throw r.error; }); };
+DB.setActivoTecnico=function(nombre,activo){ return SB.from('tecnico_maestro').update({activo:activo}).eq('nombre',nombre).then(function(r){ if(r.error) throw r.error; }); };
+
+/* Envolver refreshDL: el desplegable dl_tecnicos pasa a ser la lista maestra (activos, alfabético) */
+if(!S.__dlTecWrap && typeof refreshDL==='function'){
+  S.__dlTecWrap=true;
+  var _refreshDL_base=refreshDL;
+  refreshDL=function(){ try{ _refreshDL_base(); }catch(e){} var e2=document.getElementById('dl_tecnicos'); var opts=tecActivos(); if(e2 && opts.length){ e2.innerHTML=opts.map(function(v){return '<option value="'+esc(v)+'">';}).join(''); } };
+  try{ A.refreshDL=refreshDL; }catch(e){}
+}
+/* Envolver setVal: validación estricta de la columna TECNICOS (falla en abierto si no hay lista) */
+if(!S.__svTecWrap && typeof setVal==='function'){
+  S.__svTecWrap=true;
+  var _setVal_base=setVal;
+  setVal=async function(f,k,v){
+    if(k==='tecnicos' && S.tecnicosMaestro && S.tecnicosMaestro.length && String(v||'').trim()!==''){
+      var canon=tecCanon(), nset=tecSetNorm(), toks=splitTecnicos(v), bad=[], fix=[];
+      toks.forEach(function(t){ var n=normNom(t); if(nset[n]) fix.push(canon[n]); else bad.push(t); });
+      if(bad.length){
+        toast('Técnico no válido: <b>'+esc(bad.join(', '))+'</b>. Elígelo del desplegable o añádelo en «Técnicos».');
+        try{ if(f&&f.id) DB.unlock(f.id); }catch(e){}
+        try{ inval(); pintaFilas(); }catch(e){}
+        return;
+      }
+      v=fix.join(' / ');
+    }
+    return _setVal_base(f,k,v);
+  };
+  try{ A.setVal=setVal; }catch(e){}
+}
+
+/* Panel de gestión de técnicos */
+function catLabel(c){ return ({INTERNO:'Interno',DELEGACION_EXTERNO:'Deleg. externo',FREELANCE:'Freelance',BECARIO:'Becario',BAJA:'Baja'})[c]||c; }
+function catBadge(c){ var cl=({INTERNO:'b-ok',DELEGACION_EXTERNO:'b-acc',FREELANCE:'b-pur',BECARIO:'b-warn',BAJA:'b-bad'})[c]||'b-gray'; return '<span class="badge '+cl+'">'+esc(catLabel(c))+'</span>'; }
+function vGesTec(){
+  if(!puedoEditar()){ $('main').innerHTML='<div class="card"><div class="empty">Vista de coordinación / delegado.</div></div>'; return; }
+  var arr=(S.tecnicosMaestro||[]).slice().sort(function(a,b){ return String(a.nombre).localeCompare(String(b.nombre),'es'); });
+  var act=arr.filter(function(t){return t.activo;}), baja=arr.filter(function(t){return !t.activo;});
+  var fila=function(t){
+    var btn = t.activo
+      ? '<button class="btn sm dang" onclick="A.gtBaja(\''+esc(t.nombre)+'\')">Dar de baja</button>'
+      : '<button class="btn sm" onclick="A.gtAlta(\''+esc(t.nombre)+'\')">Reactivar</button>';
+    return '<tr><td><b>'+esc(t.nombre)+'</b></td><td>'+catBadge(t.categoria)+'</td><td class="tar">'+btn+'</td></tr>';
+  };
+  var cats=['INTERNO','DELEGACION_EXTERNO','FREELANCE','BECARIO'];
+  var cab='<div class="phead"><div><h2>Técnicos</h2><div class="sub">Lista maestra que alimenta el desplegable de la planificación (alfabético). Los <b>activos</b> se pueden usar; las <b>bajas</b> desaparecen del desplegable pero se conservan en el histórico.</div></div><div class="actions"><button class="btn" onclick="A.recargarTecnicos()">Actualizar</button></div></div>';
+  var add='<div class="card"><div class="ch">Añadir técnico nuevo</div><div class="cb"><div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end">'+
+    '<div style="flex:2;min-width:220px"><label class="dim" style="font-size:11px">Nombre completo</label><input id="gt_nom" placeholder="NOMBRE Y APELLIDOS" style="text-transform:uppercase;width:100%;padding:7px 9px;border:1px solid var(--line);border-radius:8px"></div>'+
+    '<div style="flex:1;min-width:150px"><label class="dim" style="font-size:11px">Categoría</label><select id="gt_cat" style="width:100%;padding:7px 9px;border:1px solid var(--line);border-radius:8px">'+cats.map(function(c){return '<option value="'+c+'">'+esc(catLabel(c))+'</option>';}).join('')+'</select></div>'+
+    '<div><button class="btn pri" onclick="A.gtAdd()">Añadir</button></div></div></div></div>';
+  var tActivos='<div class="card"><div class="ch">Activos ('+act.length+')</div><table class="t"><thead><tr><th>Nombre</th><th style="width:140px">Categoría</th><th class="tar" style="width:120px"></th></tr></thead><tbody>'+(act.map(fila).join('')||'<tr><td colspan="3"><div class="empty">Sin técnicos.</div></td></tr>')+'</tbody></table></div>';
+  var tBajas=baja.length?('<div class="card"><div class="ch">Bajas ('+baja.length+')</div><table class="t"><thead><tr><th>Nombre</th><th style="width:140px">Categoría</th><th class="tar" style="width:120px"></th></tr></thead><tbody>'+baja.map(fila).join('')+'</tbody></table></div>'):'';
+  $('main').innerHTML=cab+add+tActivos+tBajas;
+}
+A.recargarTecnicos=function(){ DB.loadTecnicos().then(function(d){ S.tecnicosMaestro=d; refreshDL(); render(); toast('Lista de técnicos actualizada.'); }).catch(function(e){ toast('No se pudo actualizar: '+esc(errTxt(e))); }); };
+A.gtAdd=function(){
+  if(!puedoEditar()){ toast('Sin permiso.'); return; }
+  var nom=normNom($('gt_nom')?$('gt_nom').value:''); var cat=$('gt_cat')?$('gt_cat').value:'INTERNO';
+  if(!nom){ toast('Escribe el nombre completo.'); return; }
+  if((S.tecnicosMaestro||[]).some(function(t){return normNom(t.nombre)===nom && t.activo;})){ toast('Ese técnico ya existe.'); return; }
+  DB.addTecnico(nom,cat).then(function(){ return DB.loadTecnicos(); }).then(function(d){ S.tecnicosMaestro=d; refreshDL(); render(); toast('Técnico añadido.'); }).catch(function(e){ toast('No se pudo añadir: '+esc(errTxt(e))); });
+};
+A.gtBaja=function(nombre){ if(!puedoEditar()){ toast('Sin permiso.'); return; } if(!confirm('¿Dar de baja a '+nombre+'? Dejará de aparecer en el desplegable (el histórico se conserva).')) return;
+  DB.setActivoTecnico(nombre,false).then(function(){ return DB.loadTecnicos(); }).then(function(d){ S.tecnicosMaestro=d; refreshDL(); render(); toast('Técnico dado de baja.'); }).catch(function(e){ toast('No se pudo: '+esc(errTxt(e))); }); };
+A.gtAlta=function(nombre){ if(!puedoEditar()){ toast('Sin permiso.'); return; }
+  DB.setActivoTecnico(nombre,true).then(function(){ return DB.loadTecnicos(); }).then(function(d){ S.tecnicosMaestro=d; refreshDL(); render(); toast('Técnico reactivado.'); }).catch(function(e){ toast('No se pudo: '+esc(errTxt(e))); }); };
+
 /* ---------------------------------------------------------------------------
    3) GENERADORES DE PARTE (documento imprimible / PDF)
    --------------------------------------------------------------------------- */
@@ -2403,6 +2482,7 @@ render=function(){
   if(view==='produccion'){ renderNav(); if($('kpis'))$('kpis').innerHTML=''; vProduccion(); return; }
   if(view==='horasfuera'){ renderNav(); if($('kpis'))$('kpis').innerHTML=''; vHorasFuera(); return; }
   if(view==='partes'){ renderNav(); if($('kpis'))$('kpis').innerHTML=''; vPartes(); return; }
+  if(view==='gestec'){ renderNav(); if($('kpis'))$('kpis').innerHTML=''; vGesTec(); return; }
   return _baseRender.apply(this,arguments);
 };
 A.render=render;
@@ -2687,7 +2767,9 @@ navAdd({id:'calendario',t:'Calendario',ic:'cal'},false);
     if(puedoEditar()) navAdd({id:'produccion',t:'Producción y €',ic:'bars'},true);
     navAdd({id:'horasfuera',t:'Horas extra',ic:'clock'},true);
     navAdd({id:'partes',t:'Partes de trabajo',ic:'doc'},false);
+    if(puedoEditar()) navAdd({id:'gestec',t:'Técnicos',ic:'doc'},false);
     try{ renderNav(); }catch(e){}
+    DB.loadTecnicos().then(function(d){ S.tecnicosMaestro=d; try{refreshDL();}catch(e){} if(view==='gestec') render(); }).catch(function(){});
     /* Carga de datos (cada uno tolerante a fallo) */
     NOTAS.load().then(function(d){ S.notas=d; if(view==='calendario') render(); avisoRecordatorios(); }).catch(function(){});
     DB.loadLineasSinInforme().then(function(s){ S.lineasCerradas=s; if(view==='control') render(); }).catch(function(){});
