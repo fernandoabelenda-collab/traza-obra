@@ -1850,8 +1850,8 @@ function iniH(hor){
   var mm=/(\d{1,2})[:.h](\d{2})/.exec(hor||''); return mm?String(+mm[1]).padStart(2,'0')+':'+mm[2]:'';
 }
 function campoP(l,v){ return '<div class="fld"><span class="lb">'+esc(l)+':</span> <span class="vl">'+esc(v||'')+'</span></div>'; }
-function tecsDe(f){ var m={}; S.filas.forEach(function(x){ if(x.fecha!==f||x.tipo!=='PRODUCTIVO') return; splitTecnicos(x.tecnicos).forEach(function(t){ if(t) m[t]=1; }); }); return Object.keys(m).sort(); }
-function filsDe(t,f){ return S.filas.filter(function(x){ return x.fecha===f&&x.tipo==='PRODUCTIVO'&&splitTecnicos(x.tecnicos).indexOf(t)>=0; }).sort(function(a,b){ return (iniH(a.horario)||'99:99').localeCompare(iniH(b.horario)||'99:99'); }); }
+function tecsDe(f){ var m={}; S.filas.forEach(function(x){ if(x.fecha!==f||!esProd(x.tipo)) return; splitTecnicos(x.tecnicos).forEach(function(t){ if(t) m[t]=1; }); }); return Object.keys(m).sort(); }
+function filsDe(t,f){ return S.filas.filter(function(x){ return x.fecha===f&&esProd(x.tipo)&&splitTecnicos(x.tecnicos).indexOf(t)>=0; }).sort(function(a,b){ return (iniH(a.horario)||'99:99').localeCompare(iniH(b.horario)||'99:99'); }); }
 
 /* Frecuencia de partes (diario/semanal/mensual) por técnico+OT */
 function fEsLab(iso){ if(!iso) return false; var dw=new Date(iso+'T12:00:00').getDay(); if(dw===0||dw===6) return false; if(FEST_NOM[iso]) return false; return true; }
@@ -1953,6 +1953,35 @@ DB.delFrecParte=function(tec,ot){ return SB.from('frecuencia_parte').delete().eq
    Todo aditivo; no modifica el código base (envuelve refreshDL y setVal).
    ===================================================================== */
 S.tecnicosMaestro = S.tecnicosMaestro || [];
+
+/* ==== APUNTES CONTABLES (tipos + tratamiento + filtros) ====
+   INTERNO = productivo en todo (Producción €, Carga, Horas extra, Partes, Mensual).
+   EXTERNO = categoría aparte; solo cuenta en Producción € y Carga por técnico. */
+try{ if(typeof TIPOS!=='undefined' && TIPOS.indexOf('APUNTE CONTABLE INTERNO')<0){ TIPOS.push('APUNTE CONTABLE INTERNO','APUNTE CONTABLE EXTERNO'); } }catch(e){}
+S.filtroApunte = S.filtroApunte || 'prod';   // 'prod' (PROD+INTERNO) | 'int' | 'ext'
+function esProd(t){ return t==='PRODUCTIVO' || t==='APUNTE CONTABLE INTERNO'; }
+function esApExt(t){ return t==='APUNTE CONTABLE EXTERNO'; }
+function pasaApunte(t){ if(S.filtroApunte==='int') return t==='APUNTE CONTABLE INTERNO'; if(S.filtroApunte==='ext') return esApExt(t); return esProd(t); }
+function barraApunte(){
+  var b=function(v,txt){ return '<button class="btn sm '+(S.filtroApunte===v?'on':'')+'" onclick="A.setFiltroApunte(\''+v+'\')">'+txt+'</button>'; };
+  return '<div class="searchbar" style="margin-bottom:8px">'+b('prod','Productivo (incl. internos)')+b('int','Apunte int.')+b('ext','Apunte ext.')+'<span class="dim" style="margin-left:8px;font-size:11px">«Apunte ext.» = coste que te pasan otras delegaciones por ceder un técnico</span></div>';
+}
+A.setFiltroApunte=function(v){ S.filtroApunte=v; try{ if(typeof F!=='undefined'&&F) F.tipo=''; }catch(e){} render(); };
+/* El filtro de tipo 'PRODUCTIVO' del grid debe incluir también el apunte interno,
+   en el grid y en TODAS las vistas derivadas (usan filtra). */
+if(!S.__filtraWrap && typeof filtra==='function'){
+  S.__filtraWrap=true;
+  var _filtra_base=filtra;
+  filtra=function(arr){
+    if(typeof F!=='undefined' && F && F.tipo==='PRODUCTIVO'){
+      var sv=F.tipo; F.tipo='';
+      try{ return _filtra_base(arr).filter(function(l){ return esProd(l.tipo); }); }
+      finally{ F.tipo=sv; }
+    }
+    return _filtra_base(arr);
+  };
+  try{ A.filtra=filtra; }catch(e){}
+}
 function normNom(x){ return String(x==null?'':x).toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/\s+/g,' ').trim(); }
 function tecActivos(){ return (S.tecnicosMaestro||[]).filter(function(t){return t.activo;}).map(function(t){return t.nombre;}).sort(function(a,b){return String(a).localeCompare(String(b),'es');}); }
 function tecSetNorm(){ var s={}; (S.tecnicosMaestro||[]).forEach(function(t){ if(t.activo) s[normNom(t.nombre)]=1; }); return s; }
@@ -1966,7 +1995,10 @@ DB.setActivoTecnico=function(nombre,activo){ return SB.from('tecnico_maestro').u
 if(!S.__dlTecWrap && typeof refreshDL==='function'){
   S.__dlTecWrap=true;
   var _refreshDL_base=refreshDL;
-  refreshDL=function(){ try{ _refreshDL_base(); }catch(e){} var e2=document.getElementById('dl_tecnicos'); var opts=tecActivos(); if(e2 && opts.length){ e2.innerHTML=opts.map(function(v){return '<option value="'+esc(v)+'">';}).join(''); } };
+  refreshDL=function(){ try{ _refreshDL_base(); }catch(e){}
+    var e2=document.getElementById('dl_tecnicos'); var opts=tecActivos(); if(e2 && opts.length){ e2.innerHTML=opts.map(function(v){return '<option value="'+esc(v)+'">';}).join(''); }
+    var e3=document.getElementById('dl_clientes'); var oc=cliActivos(); if(e3 && oc.length){ e3.innerHTML=oc.map(function(v){return '<option value="'+esc(v)+'">';}).join(''); }
+  };
   try{ A.refreshDL=refreshDL; }catch(e){}
 }
 /* Envolver setVal: validación estricta de la columna TECNICOS (falla en abierto si no hay lista) */
@@ -1984,6 +2016,18 @@ if(!S.__svTecWrap && typeof setVal==='function'){
         return;
       }
       v=fix.join(' / ');
+    }
+    if(k==='cliente' && S.clientesMaestro && S.clientesMaestro.length && String(v||'').trim()!==''){
+      var ccn=cliSetNorm(), ccc=cliCanon(), cn=normNom(v);
+      if(!ccn[cn]){
+        toast('Cliente no válido: <b>'+esc(v)+'</b>. Elígelo del desplegable o añádelo en «Clientes».');
+        try{ if(f&&f.id) DB.unlock(f.id); }catch(e){}
+        try{ inval(); pintaFilas(); }catch(e){}
+        return;
+      }
+      v=ccc[cn];                                  // nombre canónico
+      var ub=cliUbic(v);                          // ubicación del maestro (si la hay)
+      if(ub){ var r=await _setVal_base(f,'cliente',v); try{ await _setVal_base(f,'ubicacion',ub); }catch(e){} return r; }
     }
     return _setVal_base(f,k,v);
   };
@@ -2025,6 +2069,55 @@ A.gtBaja=function(nombre){ if(!puedoEditar()){ toast('Sin permiso.'); return; } 
   DB.setActivoTecnico(nombre,false).then(function(){ return DB.loadTecnicos(); }).then(function(d){ S.tecnicosMaestro=d; refreshDL(); render(); toast('Técnico dado de baja.'); }).catch(function(e){ toast('No se pudo: '+esc(errTxt(e))); }); };
 A.gtAlta=function(nombre){ if(!puedoEditar()){ toast('Sin permiso.'); return; }
   DB.setActivoTecnico(nombre,true).then(function(){ return DB.loadTecnicos(); }).then(function(d){ S.tecnicosMaestro=d; refreshDL(); render(); toast('Técnico reactivado.'); }).catch(function(e){ toast('No se pudo: '+esc(errTxt(e))); }); };
+
+/* =====================================================================
+   MAESTRO DE CLIENTES (desplegable + validación + ubicación automática)
+   Tabla: cliente_maestro(nombre, ubicacion, activo)
+   ===================================================================== */
+S.clientesMaestro = S.clientesMaestro || [];
+function cliActivos(){ return (S.clientesMaestro||[]).filter(function(c){return c.activo;}).map(function(c){return c.nombre;}).sort(function(a,b){return String(a).localeCompare(String(b),'es');}); }
+function cliSetNorm(){ var s={}; (S.clientesMaestro||[]).forEach(function(c){ if(c.activo) s[normNom(c.nombre)]=1; }); return s; }
+function cliCanon(){ var m={}; (S.clientesMaestro||[]).forEach(function(c){ if(c.activo) m[normNom(c.nombre)]=c.nombre; }); return m; }
+function cliUbic(nombre){ var n=normNom(nombre); for(var i=0;i<(S.clientesMaestro||[]).length;i++){ var c=S.clientesMaestro[i]; if(normNom(c.nombre)===n) return c.ubicacion||''; } return ''; }
+DB.loadClientes=function(){ return SB.from('cliente_maestro').select('nombre,ubicacion,activo').then(function(r){ if(r.error) throw r.error; return r.data||[]; }); };
+DB.addCliente=function(nombre,ubicacion){ return SB.from('cliente_maestro').upsert({nombre:nombre,ubicacion:ubicacion||'',activo:true},{onConflict:'nombre'}).then(function(r){ if(r.error) throw r.error; }); };
+DB.setActivoCliente=function(nombre,activo){ return SB.from('cliente_maestro').update({activo:activo}).eq('nombre',nombre).then(function(r){ if(r.error) throw r.error; }); };
+DB.updateUbicCliente=function(nombre,ubicacion){ return SB.from('cliente_maestro').update({ubicacion:ubicacion||''}).eq('nombre',nombre).then(function(r){ if(r.error) throw r.error; }); };
+
+function vGesCli(){
+  if(!puedoEditar()){ $('main').innerHTML='<div class="card"><div class="empty">Vista de coordinación / delegado.</div></div>'; return; }
+  var arr=(S.clientesMaestro||[]).slice().sort(function(a,b){ return String(a.nombre).localeCompare(String(b.nombre),'es'); });
+  var act=arr.filter(function(c){return c.activo;}), baja=arr.filter(function(c){return !c.activo;});
+  var fila=function(c){
+    var ub=c.ubicacion?esc(c.ubicacion):'<span class="dim">— sin ubicación (se pone a mano) —</span>';
+    var btn=c.activo?'<button class="btn sm dang" onclick="A.gcBaja(\''+esc(c.nombre)+'\')">Baja</button>':'<button class="btn sm" onclick="A.gcAlta(\''+esc(c.nombre)+'\')">Reactivar</button>';
+    return '<tr><td><b>'+esc(c.nombre)+'</b></td><td style="font-size:12px">'+ub+' '+(c.activo?'<button class="btn sm" style="margin-left:6px" onclick="A.gcUbic(\''+esc(c.nombre)+'\')">Editar ubic.</button>':'')+'</td><td class="tar">'+btn+'</td></tr>';
+  };
+  var cab='<div class="phead"><div><h2>Clientes</h2><div class="sub">Lista maestra que alimenta el desplegable de CLIENTE (alfabético). Al elegir un cliente en la planificación, su <b>ubicación se rellena sola</b> (y la puedes cambiar en la celda). Si el cliente no tiene ubicación aquí, se deja en blanco para ponerla a mano.</div></div><div class="actions"><button class="btn" onclick="A.recargarClientes()">Actualizar</button></div></div>';
+  var add='<div class="card"><div class="ch">Añadir cliente nuevo</div><div class="cb"><div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end">'+
+    '<div style="flex:1;min-width:200px"><label class="dim" style="font-size:11px">Nombre del cliente</label><input id="gc_nom" placeholder="NOMBRE FISCAL" style="width:100%;padding:7px 9px;border:1px solid var(--line);border-radius:8px"></div>'+
+    '<div style="flex:2;min-width:240px"><label class="dim" style="font-size:11px">Ubicación (opcional)</label><input id="gc_ubi" placeholder="Dirección (opcional)" style="width:100%;padding:7px 9px;border:1px solid var(--line);border-radius:8px"></div>'+
+    '<div><button class="btn pri" onclick="A.gcAdd()">Añadir</button></div></div></div></div>';
+  var tAct='<div class="card"><div class="ch">Activos ('+act.length+')</div><table class="t"><thead><tr><th style="width:34%">Cliente</th><th>Ubicación</th><th class="tar" style="width:90px"></th></tr></thead><tbody>'+(act.map(fila).join('')||'<tr><td colspan="3"><div class="empty">Sin clientes.</div></td></tr>')+'</tbody></table></div>';
+  var tBaja=baja.length?('<div class="card"><div class="ch">Bajas ('+baja.length+')</div><table class="t"><thead><tr><th style="width:34%">Cliente</th><th>Ubicación</th><th class="tar" style="width:90px"></th></tr></thead><tbody>'+baja.map(fila).join('')+'</tbody></table></div>'):'';
+  $('main').innerHTML=cab+add+tAct+tBaja;
+}
+A.recargarClientes=function(){ DB.loadClientes().then(function(d){ S.clientesMaestro=d; refreshDL(); render(); toast('Lista de clientes actualizada.'); }).catch(function(e){ toast('No se pudo actualizar: '+esc(errTxt(e))); }); };
+A.gcAdd=function(){
+  if(!puedoEditar()){ toast('Sin permiso.'); return; }
+  var nom=($('gc_nom')?$('gc_nom').value:'').trim(); var ubi=($('gc_ubi')?$('gc_ubi').value:'').trim();
+  if(!nom){ toast('Escribe el nombre del cliente.'); return; }
+  if((S.clientesMaestro||[]).some(function(c){return normNom(c.nombre)===normNom(nom) && c.activo;})){ toast('Ese cliente ya existe.'); return; }
+  DB.addCliente(nom,ubi).then(function(){ return DB.loadClientes(); }).then(function(d){ S.clientesMaestro=d; refreshDL(); render(); toast('Cliente añadido.'); }).catch(function(e){ toast('No se pudo añadir: '+esc(errTxt(e))); });
+};
+A.gcBaja=function(nombre){ if(!puedoEditar()){ toast('Sin permiso.'); return; } if(!confirm('¿Dar de baja al cliente '+nombre+'? Dejará de aparecer en el desplegable (el histórico se conserva).')) return;
+  DB.setActivoCliente(nombre,false).then(function(){ return DB.loadClientes(); }).then(function(d){ S.clientesMaestro=d; refreshDL(); render(); toast('Cliente dado de baja.'); }).catch(function(e){ toast('No se pudo: '+esc(errTxt(e))); }); };
+A.gcAlta=function(nombre){ if(!puedoEditar()){ toast('Sin permiso.'); return; }
+  DB.setActivoCliente(nombre,true).then(function(){ return DB.loadClientes(); }).then(function(d){ S.clientesMaestro=d; refreshDL(); render(); toast('Cliente reactivado.'); }).catch(function(e){ toast('No se pudo: '+esc(errTxt(e))); }); };
+A.gcUbic=function(nombre){ if(!puedoEditar()){ toast('Sin permiso.'); return; }
+  var actual=cliUbic(nombre); var nueva=prompt('Ubicación de '+nombre+':',actual);
+  if(nueva===null) return;
+  DB.updateUbicCliente(nombre,nueva.trim()).then(function(){ return DB.loadClientes(); }).then(function(d){ S.clientesMaestro=d; render(); toast('Ubicación actualizada.'); }).catch(function(e){ toast('No se pudo: '+esc(errTxt(e))); }); };
 
 /* ---------------------------------------------------------------------------
    3) GENERADORES DE PARTE (documento imprimible / PDF)
@@ -2212,7 +2305,7 @@ function vProduccion(){
   if(!puedoEditar()){ $('main').innerHTML='<div class="card"><div class="empty">Vista de uso interno de gestión (delegado y coordinación).</div></div>'; return; }
   var lineas=filtra(enAmbito());
   var vistas={}, filas=[];
-  lineas.forEach(function(l){ if(vistas[l.fid]) return; vistas[l.fid]=1; var f=S.filas.filter(function(x){return x.id===l.fid;})[0]; if(f) filas.push(f); });
+  lineas.forEach(function(l){ if(vistas[l.fid]) return; vistas[l.fid]=1; var f=S.filas.filter(function(x){return x.id===l.fid;})[0]; if(f && pasaApunte(f.tipo)) filas.push(f); });
   function nP(f){ return Number(f.prod)||0; } function nE(f){ return Number(f.esti)||0; }
   var totP=0,totE=0,nImp=0;
   filas.forEach(function(f){ totP+=nP(f); totE+=nE(f); if(nP(f)>0||nE(f)>0) nImp++; });
@@ -2230,7 +2323,7 @@ function vProduccion(){
   var cab='<div class="phead"><div><h2>Producción y estimación</h2><div class="sub">Suma de <b>Producción €</b> y <b>Estimación €</b> del rango y filtros seleccionados. Cada una por separado.</div></div></div>';
   var tabla='<div class="card"><div class="ch">Por cliente</div><table class="t"><thead><tr><th>Cliente</th><th'+C+'>Trabajos</th><th'+C+'>Producción €</th><th'+C+'>Estimación €</th><th'+C+'>Desviación €</th></tr></thead><tbody>'+cuerpo+'</tbody></table></div>';
   var pie='<div class="hint" style="margin-top:8px">Los importes salen de las columnas <b>Producción €</b> y <b>Estimación €</b> de la planificación. UNE-EN ISO/IEC 17020 §4.1.3: no deben influir en la aceptación o rechazo técnico.</div>';
-  $('main').innerHTML=cab+barraFecha()+barraFiltros()+kpis+tabla+pie;
+  $('main').innerHTML=cab+barraFecha()+barraFiltros()+barraApunte()+kpis+tabla+pie;
 }
 
 /* ---------------------------------------------------------------------------
@@ -2242,7 +2335,7 @@ function vHorasFuera(){
   var acc={};
   lineas.forEach(function(l){
     if(!l.tecnico) return;
-    if(['VACACIONES','BAJA','FESTIVO'].indexOf(l.tipo)>=0) return;
+    if(['VACACIONES','BAJA','FESTIVO','APUNTE CONTABLE EXTERNO'].indexOf(l.tipo)>=0) return;
     if(!(l.franjas&&l.franjas.length)) return;
     var k=l.tecnico+'|'+l.fecha;
     var o=acc[k]||(acc[k]={tecnico:l.tecnico,fecha:l.fecha,franjas:[],horarios:[]});
@@ -2353,10 +2446,10 @@ vTecnicos = function(){
   tecs.sort();
   var rows=tecs.map(function(t){
     var m=arr.filter(function(l){return l.tecnico===t;});
-    var p=m.filter(function(l){return l.tipo==='PRODUCTIVO';});
+    var p=m.filter(function(l){return pasaApunte(l.tipo);});
     var cl=[]; p.forEach(function(l){ if(l.cliente && cl.indexOf(l.cliente)<0) cl.push(l.cliente); }); cl.sort();
     var h=p.reduce(function(s,l){return s+(l.horas||0);},0);
-    var au=m.filter(function(l){return l.tipo!=='PRODUCTIVO';});
+    var au=m.filter(function(l){return !esProd(l.tipo)&&!esApExt(l.tipo);});
     return {t:t,n:m.length,nprod:p.length,h:h,cl:cl,au:au};
   }).sort(function(a,b){return b.h-a.h;});
   var mx=1; rows.forEach(function(r){ if(r.h>mx) mx=r.h; });
@@ -2385,7 +2478,7 @@ vTecnicos = function(){
   if(!rows.length) filas='<tr><td colspan="6"><div class="empty">Sin datos.</div></td></tr>';
   var cab='<div class="phead"><div><h2>Carga por técnico</h2><div class="sub"><b>Líneas</b> = filas de planificación (productivas y no productivas). <b>Días</b> = días laborables de ausencia. Si no cuadran, es por fechas repetidas o por días en festivo/fin de semana: se avisa en la columna de la derecha.</div></div></div>';
   var tabla='<div class="card"><table class="t"><thead><tr><th>Técnico</th><th style="width:160px">Horas</th><th style="text-align:center">Líneas</th><th style="text-align:center">Días</th><th>Clientes</th><th>No productivo</th></tr></thead><tbody>'+filas+'</tbody></table></div>';
-  $('main').innerHTML=cab+barraFecha()+barraFiltros()+tabla;
+  $('main').innerHTML=cab+barraFecha()+barraFiltros()+barraApunte()+tabla;
 };
 
 /* ---------------------------------------------------------------------------
@@ -2483,6 +2576,7 @@ render=function(){
   if(view==='horasfuera'){ renderNav(); if($('kpis'))$('kpis').innerHTML=''; vHorasFuera(); return; }
   if(view==='partes'){ renderNav(); if($('kpis'))$('kpis').innerHTML=''; vPartes(); return; }
   if(view==='gestec'){ renderNav(); if($('kpis'))$('kpis').innerHTML=''; vGesTec(); return; }
+  if(view==='gescli'){ renderNav(); if($('kpis'))$('kpis').innerHTML=''; vGesCli(); return; }
   return _baseRender.apply(this,arguments);
 };
 A.render=render;
@@ -2704,7 +2798,7 @@ A.irAPartesManana=function(f){ closeModal(); dia=f; view='partes'; S.selPartes={
 A.abrirFrecuencia=function(){
   if(!puedoEditar()){ toast('Solo coordinación o delegado.'); return; }
   var combos={};
-  S.filas.forEach(function(x){ if(x.tipo!=='PRODUCTIVO') return; splitTecnicos(x.tecnicos).forEach(function(t){ splitOT(x.ot).forEach(function(o){ if(!o) return; var k=t+'|'+o; if(!combos[k]) combos[k]={tec:t,ot:o,cli:x.cliente||'—'}; }); }); });
+  S.filas.forEach(function(x){ if(!esProd(x.tipo)) return; splitTecnicos(x.tecnicos).forEach(function(t){ splitOT(x.ot).forEach(function(o){ if(!o) return; var k=t+'|'+o; if(!combos[k]) combos[k]={tec:t,ot:o,cli:x.cliente||'—'}; }); }); });
   var lista=Object.keys(combos).map(function(k){return combos[k];}).sort(function(a,b){ return a.tec.localeCompare(b.tec)||a.ot.localeCompare(b.ot); });
   var h='<h3>Frecuencia de partes</h3><div class="mbody">';
   h+='<div class="alert i">Configura si cada técnico + OT recibe parte <b>diario</b>, <b>semanal</b> (viernes) o <b>mensual</b> (último laborable del mes). Por defecto es diario.</div>';
@@ -2768,8 +2862,10 @@ navAdd({id:'calendario',t:'Calendario',ic:'cal'},false);
     navAdd({id:'horasfuera',t:'Horas extra',ic:'clock'},true);
     navAdd({id:'partes',t:'Partes de trabajo',ic:'doc'},false);
     if(puedoEditar()) navAdd({id:'gestec',t:'Técnicos',ic:'doc'},false);
+    if(puedoEditar()) navAdd({id:'gescli',t:'Clientes',ic:'doc'},false);
     try{ renderNav(); }catch(e){}
     DB.loadTecnicos().then(function(d){ S.tecnicosMaestro=d; try{refreshDL();}catch(e){} if(view==='gestec') render(); }).catch(function(){});
+    DB.loadClientes().then(function(d){ S.clientesMaestro=d; try{refreshDL();}catch(e){} if(view==='gescli') render(); }).catch(function(){});
     /* Carga de datos (cada uno tolerante a fallo) */
     NOTAS.load().then(function(d){ S.notas=d; if(view==='calendario') render(); avisoRecordatorios(); }).catch(function(){});
     DB.loadLineasSinInforme().then(function(s){ S.lineasCerradas=s; if(view==='control') render(); }).catch(function(){});
