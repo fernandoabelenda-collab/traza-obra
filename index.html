@@ -1928,6 +1928,11 @@ DB.loadPartesRecibidos=function(){ return SB.from('parte_recibido').select('fech
 DB.marcarRecibidoParte=function(fecha,tecnico){ return SB.from('parte_recibido').insert({fecha:fecha,tecnico:tecnico,recibido_por:YO.nombre||null}).then(function(r){ if(r.error && !/duplicate key/i.test(r.error.message||'')) throw r.error; }); };
 DB.quitarRecibidoParte=function(fecha,tecnico){ return SB.from('parte_recibido').delete().eq('fecha',fecha).eq('tecnico',tecnico).then(function(r){ if(r.error) throw r.error; }); };
 
+/* Albarán del parte (tabla parte_albaranado) — Lucía marca revisado+albaranado */
+DB.loadPartesAlbaranados=function(){ return SB.from('parte_albaranado').select('fecha,tecnico,albaranado_por,albaranado_en').then(function(r){ if(r.error) throw r.error; var m=new Map(); (r.data||[]).forEach(function(x){ m.set(x.fecha+'|'+x.tecnico,{por:x.albaranado_por,en:x.albaranado_en}); }); return m; }); };
+DB.marcarAlbaranado=function(fecha,tecnico){ return SB.from('parte_albaranado').insert({fecha:fecha,tecnico:tecnico,albaranado_por:YO.nombre||null}).then(function(r){ if(r.error && !/duplicate key/i.test(r.error.message||'')) throw r.error; }); };
+DB.quitarAlbaranado=function(fecha,tecnico){ return SB.from('parte_albaranado').delete().eq('fecha',fecha).eq('tecnico',tecnico).then(function(r){ if(r.error) throw r.error; }); };
+
 /* Registro de envío del parte (tabla parte_enviado) */
 DB.loadPartesEnviados=function(){ return SB.from('parte_enviado').select('fecha,tecnico,email,via,enviado_por,enviado_en').then(function(r){ if(r.error) throw r.error; var o={}; (r.data||[]).forEach(function(x){ o[x.fecha+'|'+x.tecnico]={por:x.enviado_por,en:x.enviado_en,via:x.via}; }); return o; }); };
 DB.marcarEnviado=function(fecha,tec,email,via){ return SB.from('parte_enviado').insert({fecha:fecha,tecnico:tec,email:email||null,via:via||'manual',enviado_por:YO.nombre||null}).then(function(r){ if(r.error && !/duplicate key/i.test(r.error.message||'')) throw r.error; S.partesEnviados[fecha+'|'+tec]={por:YO.nombre,en:new Date().toISOString(),via:via||'manual'}; }); };
@@ -2170,6 +2175,108 @@ A.opcAdd=function(campo){ if(!puedoEditar()){ toast('Sin permiso.'); return; } v
 A.opcDel=function(campo,valor){ if(!puedoEditar()){ toast('Sin permiso.'); return; }
   DB.delOpcion(campo,valor).then(function(){ S.opciones[campo]=(S.opciones[campo]||[]).filter(function(x){return x!==valor;}); refreshDL(); render(); toast('Quitado.'); }).catch(function(e){ toast('No se pudo: '+esc(errTxt(e))); }); };
 
+/* Filtros (barraFiltros): usar las LISTAS MAESTRAS (técnico, cliente, técnica) como en Planificación */
+if(typeof barraFiltros==='function' && !S.__bfWrap){
+  S.__bfWrap=true;
+  barraFiltros=function(){
+    var o=function(a,s){ return a.map(function(x){return '<option value="'+esc(x)+'" '+(s===x?'selected':'')+'>'+esc(x)+'</option>';}).join(''); };
+    var all=L();
+    var tecs=tecActivos(); if(!tecs.length){ tecs=uniqL(all,function(l){return l.tecnico;}); }
+    var clis=cliActivos(); if(!clis.length){ clis=uniqL(all,function(l){return l.cliente;}); }
+    var tecn=(S.opciones&&S.opciones.tecnica&&S.opciones.tecnica.length)?opcSort(S.opciones.tecnica):null;
+    if(!tecn){ var ts={}; all.forEach(function(l){ (l.tecnicas||[]).forEach(function(x){ if(x) ts[x]=1; }); }); tecn=Object.keys(ts).sort(); }
+    var n=[F.q,F.tecnico,F.cliente,F.ot,F.tecnica,F.tipo].filter(Boolean).length;
+    return '<div class="searchbar">'+
+      '<input class="q" placeholder="Buscar…" value="'+esc(F.q)+'" oninput="A.setF(\'q\',this.value)">'+
+      '<select onchange="A.setF(\'tecnico\',this.value)"><option value="">Todos los técnicos</option>'+o(tecs,F.tecnico)+'</select>'+
+      '<select onchange="A.setF(\'cliente\',this.value)"><option value="">Todos los clientes</option>'+o(clis,F.cliente)+'</select>'+
+      '<select onchange="A.setF(\'tecnica\',this.value)"><option value="">Todas las técnicas</option>'+o(tecn,F.tecnica)+'</select>'+
+      '<input class="mono" style="width:100px" placeholder="OT…" value="'+esc(F.ot)+'" oninput="A.setF(\'ot\',this.value)">'+
+      '<select onchange="A.setF(\'tipo\',this.value)"><option value="">Todo</option>'+o(TIPOS,F.tipo)+'</select>'+
+      (n?'<button class="btn sm" onclick="A.clearF()">Limpiar ('+n+')</button>':'')+'</div>';
+  };
+  try{ A.barraFiltros=barraFiltros; }catch(e){}
+}
+/* Subtabla de Producción €: expandir/plegar un cliente (por índice, sin problemas de comillas) */
+S.prodExpand = S.prodExpand || {};
+A.prodToggle=function(i){ var c=(S._prodCli||[])[i]; if(c==null) return; S.prodExpand[c]=!S.prodExpand[c]; render(); };
+
+/* =====================================================================
+   CONTROL MENSUAL DE PARTES / ALBARANES (para Lucía)
+   Un parte = (fecha, técnico) con trabajo productivo. Estados:
+   enviado -> recibido (firma móvil o recibido manual) -> albaranado.
+   ===================================================================== */
+function vAlbaranes(){
+  if(!puedoEditar()){ $('main').innerHTML='<div class="card"><div class="empty">Vista de gestión (albaranes/facturación).</div></div>'; return; }
+  var lineas=filtra(enAmbito());
+  var partes={};
+  lineas.forEach(function(l){
+    if(!esProd(l.tipo) || !l.tecnico || !l.fecha) return;
+    var k=l.fecha+'|'+l.tecnico;
+    var o=partes[k]||(partes[k]={fecha:l.fecha,tecnico:l.tecnico,cli:{},ot:{}});
+    if(l.cliente) o.cli[l.cliente]=1;
+    (l.ot?splitOT(l.ot):[]).forEach(function(x){ if(x) o.ot[x]=1; });
+  });
+  var env=S.partesEnviados||{}, fir=S.firmas||{}, rec=S.partesRecibidos||new Map(), alb=S.partesAlbaranados||new Map();
+  var arr=Object.keys(partes).map(function(k){
+    var o=partes[k];
+    var firmado=!!fir[k], recMan=!!(rec.get&&rec.get(k)), albar=!!(alb.get&&alb.get(k)), enviado=!!env[k];
+    var recEf=firmado||recMan;
+    return {k:k,fecha:o.fecha,tecnico:o.tecnico,cli:Object.keys(o.cli),ot:Object.keys(o.ot),
+            enviado:enviado,firmado:firmado,recMan:recMan,albar:albar,recEf:recEf,
+            albInfo:(alb.get&&alb.get(k))||null};
+  });
+  var total=arr.length;
+  var nAlb=arr.filter(function(x){return x.albar;}).length;
+  var nPendAlb=arr.filter(function(x){return x.recEf && !x.albar;}).length;
+  var nPendRec=arr.filter(function(x){return !x.recEf;}).length;
+
+  S.albFiltro=S.albFiltro||'pendalb'; S.albTec=S.albTec||'';
+  var vis=arr.filter(function(x){
+    if(S.albTec && x.tecnico!==S.albTec) return false;
+    if(S.albFiltro==='pendalb') return x.recEf && !x.albar;
+    if(S.albFiltro==='pendrec') return !x.recEf;
+    if(S.albFiltro==='alb') return x.albar;
+    return true;
+  });
+  vis.sort(function(a,b){ return a.fecha.localeCompare(b.fecha) || String(a.tecnico).localeCompare(String(b.tecnico),'es'); });
+
+  var amb=(modo==='dia')?fmtDia(dia):(fmtCorto(rango.desde)+' → '+fmtCorto(rango.hasta));
+  var kpis='<div class="kpis" style="padding:0 0 11px">'+
+    '<div class="kpi"><div class="k">Partes del periodo</div><div class="v" style="font-size:20px">'+total+'</div><div class="s">'+esc(amb)+'</div></div>'+
+    '<div class="kpi '+(nPendAlb>0?'b':'g')+'"><div class="k">Pendientes de albaranar</div><div class="v" style="font-size:20px">'+nPendAlb+'</div><div class="s">recibidos sin albarán</div></div>'+
+    '<div class="kpi g"><div class="k">Albaranados</div><div class="v" style="font-size:20px">'+nAlb+'</div><div class="s">revisados por Lucía</div></div>'+
+    '<div class="kpi '+(nPendRec>0?'a':'')+'"><div class="k">Pendientes de recibir</div><div class="v" style="font-size:20px">'+nPendRec+'</div><div class="s">sin firma ni recepción</div></div></div>';
+
+  var bt=function(v,txt,n){ return '<button class="btn sm '+(S.albFiltro===v?'on':'')+'" onclick="A.setAlbFiltro(\''+v+'\')">'+txt+' ('+n+')</button>'; };
+  var tecOpts='<option value="">Todos los técnicos</option>'+tecActivos().map(function(t){return '<option value="'+esc(t)+'"'+(S.albTec===t?' selected':'')+'>'+esc(t)+'</option>';}).join('');
+  var barra='<div class="searchbar" style="margin-bottom:8px">'+bt('pendalb','Pendientes de albaranar',nPendAlb)+bt('pendrec','Pendientes de recibir',nPendRec)+bt('alb','Albaranados',nAlb)+bt('todos','Todos',total)+
+    '<select onchange="A.setAlbTec(this.value)" style="margin-left:6px">'+tecOpts+'</select></div>';
+
+  var filas=vis.map(function(x){
+    var recTxt = x.firmado?'<span class="badge b-ok">✓ Firmado móvil</span>':(x.recMan?'<span class="badge b-ok">✓ Recibido (PDF/correo)</span>':(x.enviado?'<span class="badge b-warn">Enviado, sin recibir</span>':'<span class="badge b-gray">Sin enviar</span>'));
+    var albTxt = x.albar?('<span class="badge b-ok">✓ Albaranado</span>'+(x.albInfo&&x.albInfo.por?'<br><span class="dim" style="font-size:10px">'+esc(x.albInfo.por)+'</span>':'')):'<span class="dim">—</span>';
+    var trabajos='<span class="dim" style="font-size:11.5px">'+(x.cli.map(esc).join(', ')||'-')+(x.ot.length?' · OT '+x.ot.map(esc).join('/'):'')+'</span>';
+    var acc='';
+    if(!x.recEf) acc+='<button class="btn sm" onclick="A.albMarcarRec(\''+esc(x.fecha)+'\',\''+esc(x.tecnico)+'\')">Marcar recibido</button> ';
+    if(x.recEf && !x.albar) acc+='<button class="btn sm pri" onclick="A.albMarcar(\''+esc(x.fecha)+'\',\''+esc(x.tecnico)+'\')">Albaranar</button> ';
+    if(x.albar) acc+='<button class="btn sm" onclick="A.albQuitar(\''+esc(x.fecha)+'\',\''+esc(x.tecnico)+'\')">Quitar albarán</button> ';
+    var bg = x.albar?'' : (x.recEf?' style="background:#FFF7E6"':(x.enviado?' style="background:#FFF1F0"':''));
+    return '<tr'+bg+'><td class="mono">'+esc(fmtCorto(x.fecha))+'</td><td><b>'+esc(x.tecnico)+'</b></td><td>'+trabajos+'</td><td>'+recTxt+'</td><td>'+albTxt+'</td><td class="tar" style="white-space:nowrap">'+acc+'</td></tr>';
+  }).join('');
+  if(!vis.length) filas='<tr><td colspan="6"><div class="empty">'+(S.albFiltro==='pendalb'?'✔ No queda ningún parte pendiente de albaranar en este periodo.':'Sin partes en este filtro.')+'</div></td></tr>';
+
+  var cab='<div class="phead"><div><h2>Control de albaranes</h2><div class="sub">Un parte por <b>técnico y día</b>. Lucía marca <b>Albaranar</b> cuando lo ha revisado y albaranado. Filtra por <b>Pendientes de albaranar</b> para ver de un vistazo lo que falta. Los recibidos por <b>PDF/correo</b> se marcan con <b>Marcar recibido</b>.</div></div><div class="actions"><button class="btn" onclick="A.recargarAlbaranes()">Actualizar</button></div></div>';
+  var tabla='<div class="card"><table class="t"><thead><tr><th style="width:80px">Fecha</th><th style="width:190px">Técnico</th><th>Trabajos</th><th style="width:150px">Recepción</th><th style="width:130px">Albarán</th><th class="tar">Acción</th></tr></thead><tbody>'+filas+'</tbody></table></div>';
+  $('main').innerHTML=cab+barraFecha()+barra+kpis+tabla;
+}
+A.setAlbFiltro=function(v){ S.albFiltro=v; render(); };
+A.setAlbTec=function(v){ S.albTec=v; render(); };
+A.recargarAlbaranes=function(){ Promise.all([DB.loadPartesAlbaranados(),DB.loadPartesRecibidos(),DB.loadFirmas(),DB.loadPartesEnviados()]).then(function(a){ S.partesAlbaranados=a[0]; S.partesRecibidos=a[1]; S.firmas=a[2]; S.partesEnviados=a[3]; render(); toast('Actualizado.'); }).catch(function(e){ toast('No se pudo: '+esc(errTxt(e))); }); };
+A.albMarcar=function(fecha,tec){ if(!puedoEditar()){ toast('Sin permiso.'); return; } DB.marcarAlbaranado(fecha,tec).then(function(){ return DB.loadPartesAlbaranados(); }).then(function(m){ S.partesAlbaranados=m; render(); toast('Parte albaranado.'); }).catch(function(e){ toast('No se pudo: '+esc(errTxt(e))); }); };
+A.albQuitar=function(fecha,tec){ if(!puedoEditar()){ toast('Sin permiso.'); return; } DB.quitarAlbaranado(fecha,tec).then(function(){ return DB.loadPartesAlbaranados(); }).then(function(m){ S.partesAlbaranados=m; render(); toast('Albarán quitado.'); }).catch(function(e){ toast('No se pudo: '+esc(errTxt(e))); }); };
+A.albMarcarRec=function(fecha,tec){ if(!puedoEditar()){ toast('Sin permiso.'); return; } DB.marcarRecibidoParte(fecha,tec).then(function(){ return DB.loadPartesRecibidos(); }).then(function(m){ S.partesRecibidos=m; render(); toast('Marcado como recibido.'); }).catch(function(e){ toast('No se pudo: '+esc(errTxt(e))); }); };
+
 /* ---------------------------------------------------------------------------
    3) GENERADORES DE PARTE (documento imprimible / PDF)
    --------------------------------------------------------------------------- */
@@ -2361,18 +2468,27 @@ function vProduccion(){
   var totP=0,totE=0,nImp=0;
   filas.forEach(function(f){ totP+=nP(f); totE+=nE(f); if(nP(f)>0||nE(f)>0) nImp++; });
   var desv=totP-totE; var pct=totE>0?Math.round(totP/totE*100):null;
+  S.prodExpand = S.prodExpand || {};
+  var expandible = !F.cliente;
   var byCli={};
-  filas.forEach(function(f){ var c=(f.cliente||'').trim()||'—'; if(!byCli[c]) byCli[c]={cliente:c,n:0,p:0,e:0}; if(nP(f)>0||nE(f)>0) byCli[c].n++; byCli[c].p+=nP(f); byCli[c].e+=nE(f); });
+  filas.forEach(function(f){ var c=(f.cliente||'').trim()||'—'; if(!byCli[c]) byCli[c]={cliente:c,n:0,p:0,e:0,items:[]}; if(nP(f)>0||nE(f)>0){ byCli[c].n++; byCli[c].items.push({fecha:f.fecha||'',p:nP(f),e:nE(f),proy:f.proyecto||'',ot:f.ot||''}); } byCli[c].p+=nP(f); byCli[c].e+=nE(f); });
   var rows=Object.keys(byCli).map(function(k){return byCli[k];}).filter(function(o){return o.p>0||o.e>0;}).sort(function(a,b){return b.p-a.p;});
+  S._prodCli=rows.map(function(o){return o.cliente;});
   var amb=(modo==='dia')?fmtDia(dia):(fmtCorto(rango.desde)+' → '+fmtCorto(rango.hasta));
-  function colD(d){ return d<0?'var(--bad)':(d>0?'var(--ok)':'var(--dim)'); }
   var C=' style="text-align:center"';
-  var cuerpo=rows.map(function(o){ var d=o.p-o.e; return '<tr><td><b>'+esc(o.cliente)+'</b></td><td class="mono"'+C+'>'+o.n+'</td><td class="mono"'+C+'>'+nf(o.p,0)+'</td><td class="mono"'+C+'>'+nf(o.e,0)+'</td><td class="mono" style="text-align:center;color:'+colD(d)+'">'+(d>=0?'+':'')+nf(d,0)+'</td></tr>'; }).join('');
-  if(rows.length){ cuerpo+='<tr style="background:#F7F9FC;font-weight:700"><td>TOTAL</td><td class="mono"'+C+'>'+nImp+'</td><td class="mono"'+C+'>'+nf(totP,0)+'</td><td class="mono"'+C+'>'+nf(totE,0)+'</td><td class="mono"'+C+'>'+(desv>=0?'+':'')+nf(desv,0)+'</td></tr>'; }
-  else { cuerpo='<tr><td colspan="5"><div class="empty">Sin importes en este rango o filtro.</div></td></tr>'; }
-  var kpis='<div class="kpis" style="padding:0 0 11px"><div class="kpi g"><div class="k">Producción €</div><div class="v" style="font-size:19px;padding-top:3px">'+nf(totP,0)+' €</div><div class="s">'+esc(amb)+'</div></div><div class="kpi a"><div class="k">Estimación €</div><div class="v" style="font-size:19px;padding-top:3px">'+nf(totE,0)+' €</div><div class="s">'+nImp+' trabajo(s) con importe</div></div><div class="kpi '+(desv<0?'b':(desv>0?'g':''))+'"><div class="k">Desviación (Prod − Est)</div><div class="v" style="font-size:19px;padding-top:3px">'+(desv>=0?'+':'')+nf(desv,0)+' €</div><div class="s">'+(pct!=null?(pct+'% de la estimación'):'sin estimación')+'</div></div></div>';
-  var cab='<div class="phead"><div><h2>Producción y estimación</h2><div class="sub">Suma de <b>Producción €</b> y <b>Estimación €</b> del rango y filtros seleccionados. Cada una por separado.</div></div></div>';
-  var tabla='<div class="card"><div class="ch">Por cliente</div><table class="t"><thead><tr><th>Cliente</th><th'+C+'>Trabajos</th><th'+C+'>Producción €</th><th'+C+'>Estimación €</th><th'+C+'>Desviación €</th></tr></thead><tbody>'+cuerpo+'</tbody></table></div>';
+  var cuerpo=rows.map(function(o,i){
+    var tr='<tr'+(expandible?' style="cursor:pointer" onclick="A.prodToggle('+i+')"':'')+'><td>'+(expandible?'<span class="dim" style="margin-right:5px">'+(S.prodExpand[o.cliente]?'▾':'▸')+'</span>':'')+'<b>'+esc(o.cliente)+'</b></td><td class="mono"'+C+'>'+o.n+'</td><td class="mono"'+C+'>'+nf(o.p,0)+'</td><td class="mono"'+C+'>'+nf(o.e,0)+'</td></tr>';
+    if(expandible && S.prodExpand[o.cliente]){
+      var its=o.items.slice().sort(function(a,b){return String(a.fecha).localeCompare(String(b.fecha));});
+      tr+=its.map(function(it){ return '<tr style="background:#FAFCFE"><td style="padding-left:24px">'+esc(fmtCorto(it.fecha))+(it.proy?' · <span class="dim">'+esc(it.proy)+'</span>':'')+(it.ot?' · <span class="dim">OT '+esc(it.ot)+'</span>':'')+'</td><td class="dim"'+C+' style="text-align:center;font-size:11px">día</td><td class="mono"'+C+'>'+nf(it.p,0)+'</td><td class="mono"'+C+'>'+nf(it.e,0)+'</td></tr>'; }).join('');
+    }
+    return tr;
+  }).join('');
+  if(rows.length){ cuerpo+='<tr style="background:#F7F9FC;font-weight:700"><td>TOTAL</td><td class="mono"'+C+'>'+nImp+'</td><td class="mono"'+C+'>'+nf(totP,0)+'</td><td class="mono"'+C+'>'+nf(totE,0)+'</td></tr>'; }
+  else { cuerpo='<tr><td colspan="4"><div class="empty">Sin importes en este rango o filtro.</div></td></tr>'; }
+  var kpis='<div class="kpis" style="padding:0 0 11px"><div class="kpi g"><div class="k">Producción €</div><div class="v" style="font-size:19px;padding-top:3px">'+nf(totP,0)+' €</div><div class="s">'+esc(amb)+'</div></div><div class="kpi a"><div class="k">Estimación €</div><div class="v" style="font-size:19px;padding-top:3px">'+nf(totE,0)+' €</div><div class="s">'+nImp+' trabajo(s) con importe</div></div></div>';
+  var cab='<div class="phead"><div><h2>Producción y estimación</h2><div class="sub">Suma de <b>Producción €</b> y <b>Estimación €</b> del rango y filtros seleccionados.'+(expandible?' <b>Pincha un cliente</b> para ver todos sus días trabajados.':'')+'</div></div></div>';
+  var tabla='<div class="card"><div class="ch">Por cliente</div><table class="t"><thead><tr><th>Cliente</th><th'+C+'>Trabajos</th><th'+C+'>Producción €</th><th'+C+'>Estimación €</th></tr></thead><tbody>'+cuerpo+'</tbody></table></div>';
   var pie='<div class="hint" style="margin-top:8px">Los importes salen de las columnas <b>Producción €</b> y <b>Estimación €</b> de la planificación. UNE-EN ISO/IEC 17020 §4.1.3: no deben influir en la aceptación o rechazo técnico.</div>';
   $('main').innerHTML=cab+barraFecha()+barraFiltros()+barraApunte()+kpis+tabla+pie;
 }
@@ -2501,7 +2617,8 @@ vTecnicos = function(){
     var cl=[]; p.forEach(function(l){ if(l.cliente && cl.indexOf(l.cliente)<0) cl.push(l.cliente); }); cl.sort();
     var h=p.reduce(function(s,l){return s+(l.horas||0);},0);
     var au=m.filter(function(l){return !esProd(l.tipo)&&!esApExt(l.tipo);});
-    return {t:t,n:m.length,nprod:p.length,h:h,cl:cl,au:au};
+    var dt={}; p.forEach(function(l){ if(l.fecha) dt[l.fecha]=1; }); var diasTrab=Object.keys(dt).sort();
+    return {t:t,n:m.length,nprod:p.length,h:h,cl:cl,au:au,diasTrab:diasTrab};
   }).sort(function(a,b){return b.h-a.h;});
   var mx=1; rows.forEach(function(r){ if(r.h>mx) mx=r.h; });
   var filas=rows.map(function(r){
@@ -2524,10 +2641,12 @@ vTecnicos = function(){
     var cli=r.cl.length?r.cl.map(function(c){ return '<span style="border-left:3px solid '+colorCli(c)+';padding-left:5px;margin-right:7px;font-size:11.5px">'+esc(c)+'</span>'; }).join(''):'<span class="dim">—</span>';
     if(r.cl.length>1) cli+='<span class="badge b-warn">jornada partida</span>';
     var barra='<div style="display:flex;align-items:center;gap:6px"><div class="bar" style="flex:1"><i style="width:'+(r.h/mx*100).toFixed(0)+'%"></i></div><span class="mono" style="width:38px;text-align:right">'+nf(r.h,1)+'</span></div>';
-    return '<tr><td><b>'+esc(r.t)+'</b></td><td>'+barra+'</td><td class="mono" style="text-align:center" title="Filas de planificación: '+r.nprod+' productivas + '+r.au.length+' no productivas">'+r.n+'</td><td class="mono" style="text-align:center;font-weight:700">'+(totalD||'—')+'</td><td>'+cli+'</td><td>'+aus+'</td></tr>';
+    var filtradoDia=!!(F.tecnico||F.cliente);
+    var celdaDias=filtradoDia?((r.diasTrab&&r.diasTrab.length)?'<div style="text-align:left;font-size:11px;line-height:1.5">'+r.diasTrab.map(function(d){return esc(fmtCorto(d));}).join(', ')+'</div>':'<span class="dim">—</span>'):(totalD||'—');
+    return '<tr><td><b>'+esc(r.t)+'</b></td><td>'+barra+'</td><td class="mono" style="text-align:center" title="Filas de planificación: '+r.nprod+' productivas + '+r.au.length+' no productivas">'+r.n+'</td><td class="mono" style="text-align:center;font-weight:700">'+celdaDias+'</td><td>'+cli+'</td><td>'+aus+'</td></tr>';
   }).join('');
   if(!rows.length) filas='<tr><td colspan="6"><div class="empty">Sin datos.</div></td></tr>';
-  var cab='<div class="phead"><div><h2>Carga por técnico</h2><div class="sub"><b>Líneas</b> = filas de planificación (productivas y no productivas). <b>Días</b> = días laborables de ausencia. Si no cuadran, es por fechas repetidas o por días en festivo/fin de semana: se avisa en la columna de la derecha.</div></div></div>';
+  var cab='<div class="phead"><div><h2>Carga por técnico</h2><div class="sub"><b>Líneas</b> = filas de planificación. <b>Días</b>: sin filtro, días laborables de ausencia; al <b>filtrar por técnico o cliente</b>, muestra las <b>fechas trabajadas</b>. Avisos de fechas repetidas o festivo/finde, a la derecha.</div></div></div>';
   var tabla='<div class="card"><table class="t"><thead><tr><th>Técnico</th><th style="width:160px">Horas</th><th style="text-align:center">Líneas</th><th style="text-align:center">Días</th><th>Clientes</th><th>No productivo</th></tr></thead><tbody>'+filas+'</tbody></table></div>';
   $('main').innerHTML=cab+barraFecha()+barraFiltros()+barraApunte()+tabla;
 };
@@ -2629,6 +2748,7 @@ render=function(){
   if(view==='gestec'){ renderNav(); if($('kpis'))$('kpis').innerHTML=''; vGesTec(); return; }
   if(view==='gescli'){ renderNav(); if($('kpis'))$('kpis').innerHTML=''; vGesCli(); return; }
   if(view==='listas'){ renderNav(); if($('kpis'))$('kpis').innerHTML=''; vListas(); return; }
+  if(view==='albaranes'){ renderNav(); if($('kpis'))$('kpis').innerHTML=''; vAlbaranes(); return; }
   return _baseRender.apply(this,arguments);
 };
 A.render=render;
@@ -2915,6 +3035,7 @@ navAdd({id:'calendario',t:'Calendario',ic:'cal'},false);
     navAdd({id:'partes',t:'Partes de trabajo',ic:'doc'},false);
     if(puedoEditar()) navAdd({id:'gestec',t:'Técnicos',ic:'doc'},false);
     if(puedoEditar()) navAdd({id:'gescli',t:'Clientes',ic:'doc'},false);
+    if(puedoEditar()) navAdd({id:'albaranes',t:'Albaranes',ic:'doc'},false);
     if(puedoEditar()) navAdd({id:'listas',t:'Listas',ic:'doc'},false);
     try{ renderNav(); }catch(e){}
     DB.loadTecnicos().then(function(d){ S.tecnicosMaestro=d; try{refreshDL();}catch(e){} if(view==='gestec') render(); }).catch(function(){});
@@ -2924,7 +3045,8 @@ navAdd({id:'calendario',t:'Calendario',ic:'cal'},false);
     NOTAS.load().then(function(d){ S.notas=d; if(view==='calendario') render(); avisoRecordatorios(); }).catch(function(){});
     DB.loadLineasSinInforme().then(function(s){ S.lineasCerradas=s; if(view==='control') render(); }).catch(function(){});
     DB.loadCorreos().then(function(m){ S.correos=m; }).catch(function(){});
-    DB.loadPartesRecibidos().then(function(m){ S.partesRecibidos=m; if(view==='partes') render(); }).catch(function(){});
+    DB.loadPartesRecibidos().then(function(m){ S.partesRecibidos=m; if(view==='partes'||view==='albaranes') render(); }).catch(function(){});
+    DB.loadPartesAlbaranados().then(function(m){ S.partesAlbaranados=m; if(view==='albaranes') render(); }).catch(function(){});
     DB.loadFestLocal().then(function(o){ S.festLocal=o; if(view==='horasfuera') render(); }).catch(function(){});
     DB.loadFrecPartes().then(function(o){ S.frecPartes=o; if(view==='partes') render(); }).catch(function(){});
     DB.loadFirmas().then(function(o){ S.firmas=o; if(view==='partes') render(); }).catch(function(){});
