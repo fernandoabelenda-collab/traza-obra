@@ -2035,8 +2035,14 @@ if(!S.__svTecWrap && typeof setVal==='function'){
         return;
       }
       v=ccc[cn];                                  // nombre canónico
-      var ub=cliUbic(v);                          // ubicación del maestro (si la hay)
+      var ub=ubicCliente(v, f&&f.centro);         // NAVANTIA: por centro; resto: maestro
       if(ub){ var r=await _setVal_base(f,'cliente',v); try{ await _setVal_base(f,'ubicacion',ub); }catch(e){} return r; }
+    }
+    if(k==='centro' && f && normNom(f.cliente||'').indexOf('NAVANTIA')>=0){
+      var rc=await _setVal_base(f,'centro',v);
+      var ubc=ubicCliente(f.cliente, v);
+      if(ubc){ try{ await _setVal_base(f,'ubicacion',ubc); }catch(e){} }
+      return rc;
     }
     if((k==='tecnica'||k==='horario') && String(v||'').trim()!==''){
       var rr=await _setVal_base(f,k,v);
@@ -2094,6 +2100,16 @@ function cliActivos(){ return (S.clientesMaestro||[]).filter(function(c){return 
 function cliSetNorm(){ var s={}; (S.clientesMaestro||[]).forEach(function(c){ if(c.activo) s[normNom(c.nombre)]=1; }); return s; }
 function cliCanon(){ var m={}; (S.clientesMaestro||[]).forEach(function(c){ if(c.activo) m[normNom(c.nombre)]=c.nombre; }); return m; }
 function cliUbic(nombre){ var n=normNom(nombre); for(var i=0;i<(S.clientesMaestro||[]).length;i++){ var c=S.clientesMaestro[i]; if(normNom(c.nombre)===n) return c.ubicacion||''; } return ''; }
+/* Ubicación efectiva: NAVANTIA depende del CENTRO; el resto, del maestro de clientes */
+function ubicCliente(cliente,centro){
+  var nc=normNom(cliente);
+  if(nc.indexOf('NAVANTIA')>=0){
+    var ce=normNom(centro||'');
+    if(ce.indexOf('SAN FERNANDO')>=0) return 'Ctra. de la Carraca, s/n, 11100 San Fernando, Cádiz';
+    if(ce.indexOf('PUERTO REAL')>=0)  return 'Polg. El Astilleros s/n, 11510 Puerto Real, Cádiz';
+  }
+  return cliUbic(cliente);
+}
 DB.loadClientes=function(){ return SB.from('cliente_maestro').select('nombre,ubicacion,activo').then(function(r){ if(r.error) throw r.error; return r.data||[]; }); };
 DB.addCliente=function(nombre,ubicacion){ return SB.from('cliente_maestro').upsert({nombre:nombre,ubicacion:ubicacion||'',activo:true},{onConflict:'nombre'}).then(function(r){ if(r.error) throw r.error; }); };
 DB.setActivoCliente=function(nombre,activo){ return SB.from('cliente_maestro').update({activo:activo}).eq('nombre',nombre).then(function(r){ if(r.error) throw r.error; }); };
