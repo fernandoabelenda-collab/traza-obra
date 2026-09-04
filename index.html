@@ -1964,7 +1964,7 @@ S.tecnicosMaestro = S.tecnicosMaestro || [];
 (function(){ try{
   if(!document.getElementById('__edfix')){
     var st=document.createElement('style'); st.id='__edfix';
-    st.textContent='.g td input,.g td select{box-sizing:border-box!important;width:100%!important;max-width:100%!important;min-width:0!important;height:26px!important;margin:0!important;vertical-align:top!important}.g td.sel{z-index:20}.g td.fix.sel,.g td.fixcli.sel{position:sticky!important;z-index:21}';
+    st.textContent='.g td input,.g td select{box-sizing:border-box!important;width:100%!important;max-width:100%!important;min-width:0!important;height:26px!important;margin:0!important;vertical-align:top!important}.g td.sel{z-index:20}.g td.fix.sel,.g td.fixcli.sel{position:sticky!important;z-index:21}#eurBtn{display:none!important}button[onclick="A.toggleExt()"]{display:none!important}.g td.xlrng{background:#e8f1fc!important}.g td{-webkit-user-select:none;user-select:none}';
     (document.head||document.documentElement).appendChild(st);
   }
 }catch(e){} })();
@@ -2036,6 +2036,11 @@ if(!S.__svTecWrap && typeof setVal==='function'){
       }
       v=fix.join(' / ');
     }
+    if(k==='cliente' && String(v||'').trim()===''){
+      var rcv=await _setVal_base(f,'cliente','');
+      try{ if(f && String(f.ubicacion||'')!=='') await _setVal_base(f,'ubicacion',''); }catch(e){}
+      return rcv;
+    }
     if(k==='cliente' && S.clientesMaestro && S.clientesMaestro.length && String(v||'').trim()!==''){
       var ccn=cliSetNorm(), ccc=cliCanon(), cn=normNom(v);
       if(!ccn[cn]){
@@ -2051,7 +2056,7 @@ if(!S.__svTecWrap && typeof setVal==='function'){
     if(k==='centro' && f && normNom(f.cliente||'').indexOf('NAVANTIA')>=0){
       var rc=await _setVal_base(f,'centro',v);
       var ubc=ubicCliente(f.cliente, v);
-      if(ubc){ try{ await _setVal_base(f,'ubicacion',ubc); }catch(e){} }
+      try{ await _setVal_base(f,'ubicacion',ubc||''); }catch(e){}
       return rc;
     }
     if((k==='tecnica'||k==='horario') && String(v||'').trim()!==''){
@@ -2168,9 +2173,167 @@ if(typeof colsVis==='function' && !S.__colsVisWrap){
   S.__colsVisWrap=true;
   var _colsVis_base=colsVis;
   var COL_OCULTAS={informes:1,codigo:1,unidades:1,udmedida:1};
-  colsVis=function(){ return _colsVis_base().filter(function(c){ return !COL_OCULTAS[c.k]; }); };
+  var VS_COLS={fecha:1,tecnicos:1,tipo:1,cliente:1,centro:1,proyecto:1,ubicacion:1,tecnica:1,horario:1,horas:1,ot:1,dieta:1};
+  colsVis=function(){ return COLS.filter(function(c){ return !COL_OCULTAS[c.k] && (!S.vistaSimple || VS_COLS[c.k]); }); };
   try{ A.colsVis=colsVis; }catch(e){}
 }
+
+/* ===================================================================
+   MODO EXCEL — pantalla completa, zoom para ver todo, vista simple, ayuda.
+   Solo mejora la VISTA y el manejo; no toca datos ni interrelaciones.
+   =================================================================== */
+S.zoomPlan = S.zoomPlan || 1;
+S.vistaSimple = S.vistaSimple || false;
+function aplicaZoomPlan(){ try{ var t=document.querySelector('.g'); if(t) t.style.zoom=S.zoomPlan; }catch(e){} }
+A.zoomPlan=function(d){ S.zoomPlan=Math.min(1.4,Math.max(0.5,Math.round((S.zoomPlan+d)*100)/100)); aplicaZoomPlan(); var z=document.getElementById('xl_zoom'); if(z)z.textContent=Math.round(S.zoomPlan*100)+'%'; };
+A.planFull=function(){ try{ if(!document.fullscreenElement){ var el=document.documentElement; (el.requestFullscreen||el.webkitRequestFullscreen).call(el); } else { (document.exitFullscreen||document.webkitExitFullscreen).call(document); } }catch(e){} };
+A.vistaSimpleToggle=function(){ S.vistaSimple=!S.vistaSimple; try{ if(typeof pintaFilas==='function')pintaFilas(); }catch(e){} render(); };
+A.ayudaExcel=function(){ var p=document.getElementById('xl_help'); if(p) p.style.display=(p.style.display==='block')?'none':'block'; };
+function barraExcel(){
+  var d=document.getElementById('xl_bar');
+  if(!d){
+    d=document.createElement('div'); d.id='xl_bar';
+    d.style.cssText='position:fixed;top:60px;right:18px;z-index:80;display:flex;gap:6px;align-items:center;background:#fff;border:1px solid #dfe5ec;border-radius:10px;padding:5px 8px;box-shadow:0 4px 14px rgba(20,40,80,.10);font-size:12px';
+    d.innerHTML='<button class="btn sm" onclick="A.planFull()" title="Pantalla completa (F11 también)">⛶ Pantalla completa</button>'+
+      '<span style="display:inline-flex;align-items:center;gap:3px;border-left:1px solid #eef2f7;padding-left:6px">Zoom <button class="btn sm" onclick="A.zoomPlan(-0.1)">−</button><span id="xl_zoom" style="min-width:40px;text-align:center;font-variant-numeric:tabular-nums">100%</span><button class="btn sm" onclick="A.zoomPlan(0.1)">+</button></span>'+
+      '<button class="btn sm" id="xl_vs" onclick="A.vistaSimpleToggle()" title="Menos columnas, más control" style="border-left:1px solid #eef2f7;padding-left:8px">Vista simple</button>'+
+      '<button class="btn sm" onclick="A.fillDown()" title="Selecciona un rango y copia la 1ª fila hacia abajo (Ctrl+D)">Rellenar ↓</button>'+
+      '<span style="display:inline-flex;align-items:center;gap:3px;border-left:1px solid #eef2f7;padding-left:6px">Agrupar:<button class="btn sm" id="xl_sc" onclick="A.setSort(\'cliente\')" title="Filas iguales de cliente, juntas">Cliente</button><button class="btn sm" id="xl_st" onclick="A.setSort(\'tecnico\')" title="Filas de un mismo técnico, juntas">Técnico</button></span>'+
+      '<button class="btn sm" onclick="A.deshacer()" title="Deshacer (Ctrl+Z)">↶ Deshacer</button>'+
+      '<button class="btn sm" onclick="A.ayudaExcel()" title="Atajos tipo Excel">?</button>'+
+      '<div id="xl_help" style="display:none;position:absolute;top:42px;right:0;width:310px;background:#1b2430;color:#fff;border-radius:10px;padding:12px 14px;font-size:12px;line-height:1.75;box-shadow:0 10px 30px rgba(0,0,0,.3);text-align:left">'+
+      '<b style="font-size:13px">Trabaja como en Excel</b><br>'+
+      '· <b>Escribe directo</b> en la celda (sin doble clic)<br>'+
+      '· <b>Flechas · Tab · Enter</b> para moverte<br>'+
+      '· <b>Ctrl+C</b> copiar · <b>Ctrl+V</b> pegar (desde Excel también)<br>'+
+      '· <b>Ctrl+D</b> duplica la fila de arriba<br>'+
+      '· <b>Supr</b> vaciar celda · <b>Ctrl+Z</b> deshacer<br>'+
+      '· <b>Insert</b> nueva fila · <b>Inicio/Fin</b> primera/última columna</div>';
+    document.body.appendChild(d);
+  }
+  d.style.display=(view==='plan')?'flex':'none';
+  var z=document.getElementById('xl_zoom'); if(z)z.textContent=Math.round(S.zoomPlan*100)+'%';
+  var vb=document.getElementById('xl_vs'); if(vb){ vb.textContent=S.vistaSimple?'Vista completa':'Vista simple'; try{vb.classList.toggle('on',S.vistaSimple);}catch(e){} }
+  var sc=document.getElementById('xl_sc'); if(sc)try{sc.classList.toggle('on',S.sortMode==='cliente');}catch(e){}
+  var stt=document.getElementById('xl_st'); if(stt)try{stt.classList.toggle('on',S.sortMode==='tecnico');}catch(e){}
+  if(view==='plan') setTimeout(function(){ try{aplicaZoomPlan();}catch(e){} try{barraFiltrosPlan();}catch(e){} },40);
+}
+
+/* Agrupar filas por cliente o por técnico (SOLO la vista; no cambia los datos) */
+if(typeof filasDelAmbito==='function' && !S.__fdaWrap){
+  S.__fdaWrap=true;
+  var _fda=filasDelAmbito;
+  filasDelAmbito=function(){
+    var a=_fda();
+    if(S.fPlanCli){ var nc=normNom(S.fPlanCli); a=a.filter(function(f){ return normNom(f.cliente||'')===nc; }); }
+    if(S.fPlanTec){ var nt=normNom(S.fPlanTec); a=a.filter(function(f){ return splitTecnicos(f.tecnicos).some(function(t){ return normNom(t)===nt; }); }); }
+    if(S.sortMode==='cliente'||S.sortMode==='tecnico'){
+      var k1=(S.sortMode==='cliente')?'cliente':'tecnicos', k2=(S.sortMode==='cliente')?'tecnicos':'cliente';
+      a=a.slice().sort(function(x,y){
+        return String(x.fecha||'').localeCompare(String(y.fecha||''))
+          || String(x[k1]||'').localeCompare(String(y[k1]||''),'es')
+          || String(x[k2]||'').localeCompare(String(y[k2]||''),'es')
+          || String(x.creado_en||'').localeCompare(String(y.creado_en||''));
+      });
+    }
+    return a;
+  };
+  try{ A.filasDelAmbito=filasDelAmbito; }catch(e){}
+}
+A.setSort=function(m){ S.sortMode=(S.sortMode===m)?null:m; try{pintaFilas();}catch(e){} try{render();}catch(e){} };
+A.deshacer=function(){ try{ undo(); }catch(e){} };
+A.setFPlanCli=function(v){ S.fPlanCli=v||''; try{pintaFilas();}catch(e){} try{render();}catch(e){} };
+A.setFPlanTec=function(v){ S.fPlanTec=v||''; try{pintaFilas();}catch(e){} try{render();}catch(e){} };
+A.limpiaFPlan=function(){ S.fPlanCli=''; S.fPlanTec=''; try{pintaFilas();}catch(e){} try{render();}catch(e){} };
+function barraFiltrosPlan(){
+  var gw=document.getElementById('gw'); var fb=document.getElementById('xl_filtros');
+  if(view!=='plan'||!gw){ if(fb)fb.style.display='none'; return; }
+  if(!fb || !fb.parentNode){ fb=document.createElement('div'); fb.id='xl_filtros'; fb.style.cssText='display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:8px 12px;margin:0 0 8px;background:#fff;border:1px solid #dfe5ec;border-radius:10px;font-size:12.5px'; gw.parentNode.insertBefore(fb,gw); }
+  fb.style.display='flex';
+  var cl=(typeof cliActivos==='function')?cliActivos():[], tc=(typeof tecActivos==='function')?tecActivos():[];
+  var oc='<option value="">Todos los clientes</option>'+cl.map(function(x){return '<option value="'+esc(x)+'"'+(S.fPlanCli===x?' selected':'')+'>'+esc(x)+'</option>';}).join('');
+  var ot='<option value="">Todos los técnicos</option>'+tc.map(function(x){return '<option value="'+esc(x)+'"'+(S.fPlanTec===x?' selected':'')+'>'+esc(x)+'</option>';}).join('');
+  var n=(S.fPlanCli?1:0)+(S.fPlanTec?1:0);
+  var nvis=document.querySelectorAll('.g tbody tr').length;
+  fb.innerHTML='<b>Filtrar:</b>'+
+    '<select onchange="A.setFPlanCli(this.value)" style="padding:5px 8px;border:1px solid #dfe5ec;border-radius:8px;max-width:230px">'+oc+'</select>'+
+    '<select onchange="A.setFPlanTec(this.value)" style="padding:5px 8px;border:1px solid #dfe5ec;border-radius:8px;max-width:230px">'+ot+'</select>'+
+    (n?'<button class="btn sm" onclick="A.limpiaFPlan()">Quitar filtro ('+n+')</button>':'')+
+    '<span class="dim" style="margin-left:auto;font-size:11px">'+nvis+' fila(s) visibles</span>';
+}
+
+/* ===== MODO EXCEL — CAPA 2: selección múltiple, arrastrar-copiar, rellenar ===== */
+(function(){
+  if(typeof pintaSel!=='function' || S.__xl2) return; S.__xl2=true;
+  S.rng=null; S.rngA=null;
+  function normAB(a,b){ return {r1:Math.min(a.r,b.r),c1:Math.min(a.c,b.c),r2:Math.max(a.r,b.r),c2:Math.max(a.c,b.c)}; }
+  function norm(g){ return {r1:Math.min(g.r1,g.r2),c1:Math.min(g.c1,g.c2),r2:Math.max(g.r1,g.r2),c2:Math.max(g.c1,g.c2)}; }
+  function cellAt(r,c){ try{ return celda(r,c); }catch(e){ return null; } }
+  var _ps=pintaSel;
+  pintaSel=function(){ try{_ps();}catch(e){} try{pintaRango();}catch(e){} };
+  try{ A.pintaSel=pintaSel; }catch(e){}
+  function pintaRango(){
+    document.querySelectorAll('.g td.xlrng').forEach(function(e){e.classList.remove('xlrng');});
+    var h=document.getElementById('xlfh');
+    if(view!=='plan'){ if(h)h.style.display='none'; return; }
+    var gw=document.getElementById('gw'); if(gw&&!gw.__xls){ gw.__xls=1; gw.addEventListener('scroll',function(){ try{ posHandle(); }catch(e){} }); }
+    var g=S.rng?norm(S.rng):{r1:sel.r,c1:sel.c,r2:sel.r,c2:sel.c};
+    if(g.r1!==g.r2||g.c1!==g.c2){ for(var r=g.r1;r<=g.r2;r++)for(var c=g.c1;c<=g.c2;c++){ if(r===sel.r&&c===sel.c)continue; var td=document.querySelector('.g td[data-r="'+r+'"][data-c="'+c+'"]'); if(td)td.classList.add('xlrng'); } }
+    if(!h){ h=document.createElement('div'); h.id='xlfh'; h.title='Arrastra para copiar hacia abajo'; h.style.cssText='position:fixed;width:9px;height:9px;background:#1F4E89;border:1px solid #fff;cursor:crosshair;z-index:85;display:none'; h.addEventListener('mousedown',fhDown); document.body.appendChild(h); }
+    posHandle();
+  }
+  function posHandle(){ var h=document.getElementById('xlfh'); if(!h)return; if(view!=='plan'){h.style.display='none';return;} var g=S.rng?norm(S.rng):{r1:sel.r,c1:sel.c,r2:sel.r,c2:sel.c}; var brc=document.querySelector('.g td[data-r="'+g.r2+'"][data-c="'+g.c2+'"]'); if(brc){ var r=brc.getBoundingClientRect(); h.style.left=(r.right-5)+'px'; h.style.top=(r.bottom-5)+'px'; h.style.display='block'; } else h.style.display='none'; }
+  async function fillDown(){ if(!S.rng){ toast('Selecciona varias filas primero.'); return; } var g=norm(S.rng); if(g.r2<=g.r1){ toast('Selecciona varias filas.'); return; }
+    for(var c=g.c1;c<=g.c2;c++){ var top=cellAt(g.r1,c); if(!top||!top.col||top.col.ty==='ro') continue; var v=top.f[top.col.k]; v=(v==null?'':v);
+      for(var r=g.r1+1;r<=g.r2;r++){ var o=cellAt(r,c); if(o&&o.f&&o.col){ try{ await setVal(o.f,top.col.k,v); }catch(e){} } } }
+    try{pintaFilas();pintaSel();}catch(e){} toast('Rellenado hacia abajo.'); }
+  A.fillDown=fillDown;
+  var fhing=false,fhSrc=null;
+  function fhDown(e){ try{e.preventDefault();e.stopPropagation();}catch(_){}; fhing=true; fhSrc=S.rng?norm(S.rng):{r1:sel.r,c1:sel.c,r2:sel.r,c2:sel.c}; }
+  async function fhApply(targetR2){ var g=fhSrc,hh=g.r2-g.r1+1;
+    for(var c=g.c1;c<=g.c2;c++){ var c0=cellAt(g.r1,c); if(!c0||!c0.col||c0.col.ty==='ro') continue; var k=c0.col.k;
+      var vals=[]; for(var rr=g.r1;rr<=g.r2;rr++){ var o=cellAt(rr,c); vals.push(o&&o.f?o.f[k]:''); }
+      for(var r=g.r2+1;r<=targetR2;r++){ var o2=cellAt(r,c); if(o2&&o2.f){ var v=vals[(r-g.r1)%hh]; try{ await setVal(o2.f,k,(v==null?'':v)); }catch(e){} } } }
+    try{pintaFilas();pintaSel();}catch(e){} }
+  var drag=false,anchor=null;
+  document.addEventListener('mousedown',function(e){ try{
+    if(view!=='plan'||editing) return;
+    if(e.target.closest&&e.target.closest('#xlfh')) return;
+    var td=e.target.closest&&e.target.closest('.g td[data-r]'); if(!td) return;
+    if(e.shiftKey) return;
+    anchor={r:+td.dataset.r,c:+td.dataset.c}; drag=true; S.rngA=anchor;
+    sel.r=anchor.r; sel.c=anchor.c; S.rng={r1:anchor.r,c1:anchor.c,r2:anchor.r,c2:anchor.c}; pintaSel();
+  }catch(err){} });
+  document.addEventListener('mousemove',function(e){
+    if(fhing){ try{ var t2=e.target.closest&&e.target.closest('.g td[data-r]'); if(t2){ var rr=Math.max(fhSrc.r2,+t2.dataset.r); S.rng={r1:fhSrc.r1,c1:fhSrc.c1,r2:rr,c2:fhSrc.c2}; sel.r=rr; pintaSel(); } }catch(e){} return; }
+    if(!drag) return; try{ var td=e.target.closest&&e.target.closest('.g td[data-r]'); if(!td) return; var r=+td.dataset.r,c=+td.dataset.c; sel.r=r; sel.c=c; S.rng=normAB(anchor,{r:r,c:c}); pintaSel(); }catch(err){} });
+  document.addEventListener('mouseup',function(){ if(fhing){ fhing=false; try{ if(S.rng&&norm(S.rng).r2>fhSrc.r2) fhApply(norm(S.rng).r2); }catch(e){} } drag=false; });
+  document.addEventListener('click',function(e){ try{
+    if(view!=='plan'||editing||!e.shiftKey) return;
+    var td=e.target.closest&&e.target.closest('.g td[data-r]'); if(!td) return; e.stopPropagation();
+    var a=S.rngA||{r:sel.r,c:sel.c}; var r=+td.dataset.r,c=+td.dataset.c; sel.r=r; sel.c=c; S.rngA=a; S.rng=normAB(a,{r:r,c:c}); pintaSel();
+  }catch(err){} },true);
+  document.addEventListener('keydown',function(e){ try{
+    if(view!=='plan'||editing) return;
+    var nR=filasDelAmbito().length, nC=colsVis().length; if(!nC) return;
+    var arr=['ArrowDown','ArrowUp','ArrowRight','ArrowLeft'];
+    if(e.shiftKey&&arr.indexOf(e.key)>=0){ e.preventDefault(); e.stopPropagation();
+      if(!S.rngA)S.rngA={r:sel.r,c:sel.c};
+      if(e.key==='ArrowDown')sel.r=Math.min(nR-1,sel.r+1); else if(e.key==='ArrowUp')sel.r=Math.max(0,sel.r-1);
+      else if(e.key==='ArrowRight')sel.c=Math.min(nC-1,sel.c+1); else sel.c=Math.max(0,sel.c-1);
+      S.rng=normAB(S.rngA,{r:sel.r,c:sel.c}); pintaSel(); return; }
+    if((e.ctrlKey||e.metaKey)&&(e.key==='d'||e.key==='D')&&S.rng){ var g=norm(S.rng); if(g.r2>g.r1){ e.preventDefault(); e.stopPropagation(); fillDown(); return; } }
+    if((e.ctrlKey||e.metaKey)&&(e.key==='c'||e.key==='C')&&S.rng){ var gc=norm(S.rng); if(gc.r1!==gc.r2||gc.c1!==gc.c2){ e.preventDefault(); e.stopPropagation(); var L=[]; for(var r=gc.r1;r<=gc.r2;r++){ var row=[]; for(var c=gc.c1;c<=gc.c2;c++){ var o=cellAt(r,c); row.push(o&&o.f&&o.col?(o.f[o.col.k]==null?'':String(o.f[o.col.k])):''); } L.push(row.join('\t')); } try{ if(navigator.clipboard)navigator.clipboard.writeText(L.join('\n')); }catch(_){}; toast('Copiadas '+((gc.r2-gc.r1+1)*(gc.c2-gc.c1+1))+' celdas.'); return; } }
+    if((e.key==='Delete'||e.key==='Backspace')&&S.rng){ var gd=norm(S.rng); if(gd.r1!==gd.r2||gd.c1!==gd.c2){ e.preventDefault(); e.stopPropagation(); (async function(){ for(var r=gd.r1;r<=gd.r2;r++)for(var c=gd.c1;c<=gd.c2;c++){ var o=cellAt(r,c); if(o&&o.f&&o.col&&o.col.ty!=='ro'){ try{ await setVal(o.f,o.col.k,''); }catch(e){} } } try{pintaFilas();pintaSel();}catch(e){} toast('Vaciadas.'); })(); return; } }
+    if(!e.shiftKey&&!e.ctrlKey&&!e.metaKey&&(arr.indexOf(e.key)>=0||e.key==='Tab'||e.key==='Home'||e.key==='End')){ S.rngA=null; S.rng=null; }
+  }catch(err){} },true);
+  document.addEventListener('paste',function(e){ try{
+    if(view!=='plan'||editing||!S.rng) return; var g=norm(S.rng); if(g.r1===g.r2&&g.c1===g.c2) return;
+    var t=(e.clipboardData||window.clipboardData).getData('text'); if(t==null) return; if(/[\t\n\r]/.test(t.replace(/[\r\n]+$/,''))) return;
+    e.preventDefault(); e.stopPropagation(); var val=t.trim();
+    (async function(){ for(var r=g.r1;r<=g.r2;r++)for(var c=g.c1;c<=g.c2;c++){ var o=cellAt(r,c); if(o&&o.f&&o.col&&o.col.ty!=='ro'){ try{ await setVal(o.f,o.col.k,val); }catch(e){} } } try{pintaFilas();pintaSel();}catch(e){} toast('Pegado en varias celdas.'); })();
+  }catch(err){} },true);
+})();
 
 /* =====================================================================
    DESPLEGABLES QUE APRENDEN: TÉCNICA y HORARIO (arrancan limpios)
@@ -2783,6 +2946,7 @@ function vPartes(){
 
 var _baseRender=render;
 render=function(){
+  try{ barraExcel(); }catch(e){}
   if(view==='calendario'){ renderNav(); if($('kpis'))$('kpis').innerHTML=''; vCalendario(); return; }
   if(view==='produccion'){ renderNav(); if($('kpis'))$('kpis').innerHTML=''; vProduccion(); return; }
   if(view==='horasfuera'){ renderNav(); if($('kpis'))$('kpis').innerHTML=''; vHorasFuera(); return; }
@@ -3080,8 +3244,8 @@ navAdd({id:'calendario',t:'Calendario',ic:'cal'},false);
     if(puedoEditar()) navAdd({id:'albaranes',t:'Albaranes',ic:'doc'},false);
     if(puedoEditar()) navAdd({id:'listas',t:'Listas',ic:'doc'},false);
     try{ renderNav(); }catch(e){}
-    DB.loadTecnicos().then(function(d){ S.tecnicosMaestro=d; try{refreshDL();}catch(e){} if(view==='gestec') render(); }).catch(function(){});
-    DB.loadClientes().then(function(d){ S.clientesMaestro=d; try{refreshDL();}catch(e){} if(view==='gescli') render(); }).catch(function(){});
+    DB.loadTecnicos().then(function(d){ S.tecnicosMaestro=d; try{refreshDL();}catch(e){} try{barraFiltrosPlan();}catch(e){} if(view==='gestec') render(); }).catch(function(){});
+    DB.loadClientes().then(function(d){ S.clientesMaestro=d; try{refreshDL();}catch(e){} try{barraFiltrosPlan();}catch(e){} if(view==='gescli') render(); }).catch(function(){});
     DB.loadOpciones().then(function(o){ S.opciones=o; try{refreshDL();}catch(e){} if(view==='listas') render(); }).catch(function(){});
     /* Carga de datos (cada uno tolerante a fallo) */
     NOTAS.load().then(function(d){ S.notas=d; if(view==='calendario') render(); avisoRecordatorios(); }).catch(function(){});
