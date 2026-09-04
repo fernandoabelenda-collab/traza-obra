@@ -2398,7 +2398,7 @@ A.prodToggle=function(i){ var c=(S._prodCli||[])[i]; if(c==null) return; S.prodE
    ===================================================================== */
 function vAlbaranes(){
   if(!puedoEditar()){ $('main').innerHTML='<div class="card"><div class="empty">Vista de gestión (albaranes/facturación).</div></div>'; return; }
-  var lineas=filtra(enAmbito());
+  var lineas=enAmbito();   // Albaranes NO usa el filtro compartido de otras pantallas; tiene los suyos propios
   var partes={};
   lineas.forEach(function(l){
     if(!esProd(l.tipo) || !l.tecnico || !l.fecha) return;
