@@ -111,7 +111,7 @@ function enviar(){
   if(ob&&ob.textContent.trim())body.observaciones=ob.textContent.trim();
   fetch(D.su+'/rest/v1/firma_parte',{
     method:'POST',
-    headers:{'Content-Type':'application/json','apikey':D.sk,'Prefer':'resolution=merge-duplicates'},
+    headers:{'Content-Type':'application/json','apikey':D.sk,'Authorization':'Bearer '+D.sk,'Prefer':'resolution=merge-duplicates'},
     body:JSON.stringify(body)
   }).then(function(r){
     espera(false);
@@ -138,7 +138,7 @@ function pinta(){
 function arranque(){
   var codigo=null; try{ codigo=new URLSearchParams(location.search).get('p'); }catch(e){}
   if(codigo){
-    fetch(SUPA_URL+'/rest/v1/parte_enlace?select=datos&codigo=eq.'+encodeURIComponent(codigo),{headers:{'apikey':SUPA_KEY}})
+    fetch(SUPA_URL+'/rest/v1/parte_enlace?select=datos&codigo=eq.'+encodeURIComponent(codigo),{headers:{'apikey':SUPA_KEY,'Authorization':'Bearer '+SUPA_KEY}})
       .then(function(r){return r.json();})
       .then(function(rows){ if(rows&&rows[0]&&rows[0].datos){ D=rows[0].datos; D.su=SUPA_URL; D.sk=SUPA_KEY; } else { D=null; } pinta(); })
       .catch(function(){ D=null; pinta(); });
