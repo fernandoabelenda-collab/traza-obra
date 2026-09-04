@@ -2053,7 +2053,7 @@ if(!S.__svTecWrap && typeof setVal==='function'){
       var ub=ubicCliente(v, f&&f.centro);         // NAVANTIA: por centro; resto: maestro
       if(ub){ var r=await _setVal_base(f,'cliente',v); try{ await _setVal_base(f,'ubicacion',ub); }catch(e){} return r; }
     }
-    if(k==='centro' && f && normNom(f.cliente||'').indexOf('NAVANTIA')>=0){
+    if(k==='centro' && f && (normNom(f.cliente||'').indexOf('NAVANTIA')>=0 || normNom(f.cliente||'').indexOf('DRAGADOS')>=0)){
       var rc=await _setVal_base(f,'centro',v);
       var ubc=ubicCliente(f.cliente, v);
       try{ await _setVal_base(f,'ubicacion',ubc||''); }catch(e){}
@@ -2122,6 +2122,11 @@ function ubicCliente(cliente,centro){
     var ce=normNom(centro||'');
     if(ce.indexOf('SAN FERNANDO')>=0) return 'Ctra. de la Carraca, s/n, 11100 San Fernando, Cádiz';
     if(ce.indexOf('PUERTO REAL')>=0)  return 'Polg. El Astilleros s/n, 11510 Puerto Real, Cádiz';
+  }
+  if(nc.indexOf('DRAGADOS')>=0){
+    var cd=normNom(centro||'');
+    if(cd.indexOf('PUERTO REAL')>=0) return 'Yard Puerto Real, Bajo de la Cabezuela s/n, 11510 Puerto Real (Cádiz), España';
+    if(cd.indexOf('CAMPAMENTO')>=0)  return 'Instalaciones portuarias de Campamento, San Roque, Cádiz';
   }
   return cliUbic(cliente);
 }
