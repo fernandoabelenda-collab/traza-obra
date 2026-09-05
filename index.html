@@ -1924,9 +1924,9 @@ DB.guardarCorreo=function(t,email){ return SB.from('tecnico_correo').upsert({tec
 DB.borrarCorreo=function(t){ return SB.from('tecnico_correo').delete().eq('tecnico',t).then(function(r){ if(r.error) throw r.error; }); };
 
 /* Recepción manual del parte (tabla parte_recibido) */
-DB.loadPartesRecibidos=function(){ return SB.from('parte_recibido').select('fecha,tecnico,recibido_por,recibido_en').then(function(r){ if(r.error) throw r.error; var m=new Map(); (r.data||[]).forEach(function(x){ m.set(x.fecha+'|'+x.tecnico,{por:x.recibido_por,en:x.recibido_en}); }); return m; }); };
-DB.marcarRecibidoParte=function(fecha,tecnico){ return SB.from('parte_recibido').insert({fecha:fecha,tecnico:tecnico,recibido_por:YO.nombre||null}).then(function(r){ if(r.error && !/duplicate key/i.test(r.error.message||'')) throw r.error; }); };
-DB.quitarRecibidoParte=function(fecha,tecnico){ return SB.from('parte_recibido').delete().eq('fecha',fecha).eq('tecnico',tecnico).then(function(r){ if(r.error) throw r.error; }); };
+DB.loadPartesRecibidos=function(){ return SB.from('parte_recibido').select('fecha,tecnico,cliente,recibido_por,recibido_en').then(function(r){ if(r.error) throw r.error; var m=new Map(); (r.data||[]).forEach(function(x){ m.set(x.fecha+'|'+x.tecnico+'|'+(x.cliente||''),{por:x.recibido_por,en:x.recibido_en}); }); return m; }); };
+DB.marcarRecibidoParte=function(fecha,tecnico,cli){ return SB.from('parte_recibido').insert({fecha:fecha,tecnico:tecnico,cliente:cli||'',recibido_por:YO.nombre||null}).then(function(r){ if(r.error && !/duplicate key/i.test(r.error.message||'')) throw r.error; }); };
+DB.quitarRecibidoParte=function(fecha,tecnico,cli){ return SB.from('parte_recibido').delete().eq('fecha',fecha).eq('tecnico',tecnico).eq('cliente',cli||'').then(function(r){ if(r.error) throw r.error; }); };
 
 /* Albarán del parte (tabla parte_albaranado) — Lucía marca revisado+albaranado */
 DB.loadPartesAlbaranados=function(){ return SB.from('parte_albaranado').select('fecha,tecnico,cliente,albaranado_por,albaranado_en').then(function(r){ if(r.error) throw r.error; var m=new Map(); (r.data||[]).forEach(function(x){ m.set(x.fecha+'|'+x.tecnico+'|'+(x.cliente||''),{por:x.albaranado_por,en:x.albaranado_en}); }); return m; }); };
@@ -2427,7 +2427,7 @@ function vAlbaranes(){
   var arr=Object.keys(partes).map(function(k){
     var o=partes[k];
     var kr=o.fecha+'|'+o.tecnico;   // recepci\u00f3n/firma: por t\u00e9cnico y d\u00eda (el parte firmado cubre el d\u00eda)
-    var firmado=!!fir[kr], recMan=!!g(rec,kr), enviado=!!env[kr];
+    var firmado=!!fir[kr], recMan=!!g(rec,k), enviado=!!env[kr];
     return {k:k,fecha:o.fecha,tecnico:o.tecnico,cliente:o.cliente,ot:Object.keys(o.ot),
             enviado:enviado,firmado:firmado,recMan:recMan,recEf:firmado||recMan,
             albar:!!g(alb,k),albInfo:g(alb,k),
@@ -2484,7 +2484,7 @@ function vAlbaranes(){
   };
   var filas=vis.map(function(x){
     var trabajos='<b style="font-size:12px">'+esc(x.cliente)+'</b>'+(x.ot.length?'<br><span class="dim" style="font-size:11px">OT '+x.ot.map(esc).join('/')+'</span>':'');
-    var recCell = x.firmado?'<span class="badge b-ok">\u2713 Firmado</span>':(x.recMan?'<span class="badge b-ok">\u2713 Recibido</span>':'<button class="btn sm" onclick="A.albMarcarRec(\''+qq(x.fecha)+'\',\''+qq(x.tecnico)+'\')">Marcar recibido</button>');
+    var recCell = x.firmado?'<span class="badge b-ok">\u2713 Firmado</span>':(x.recMan?'<span class="badge b-ok">\u2713 Recibido</span> <button class="btn sm" onclick="A.albQuitarRec(\''+qq(x.fecha)+'\',\''+qq(x.tecnico)+'\',\''+qq(x.cliente)+'\')">quitar</button>':'<button class="btn sm" onclick="A.albMarcarRec(\''+qq(x.fecha)+'\',\''+qq(x.tecnico)+'\',\''+qq(x.cliente)+'\')">Marcar recibido</button>');
     var albCell = etapa(x.albar,x.albInfo,x.fecha,x.tecnico,x.cliente,'A.albMarcar','A.albQuitar','Albaranar');
     var profCell = etapa(x.prof,x.profInfo,x.fecha,x.tecnico,x.cliente,'A.marcarProforma','A.quitarProforma','Proforma');
     var factCell = etapa(x.fact,x.factInfo,x.fecha,x.tecnico,x.cliente,'A.marcarFactura','A.quitarFactura','Facturar');
@@ -2514,7 +2514,8 @@ A.setAlbCli=function(v){ S.albCli=v; render(); };
 A.recargarAlbaranes=function(){ Promise.all([DB.loadPartesAlbaranados(),DB.loadPartesRecibidos(),DB.loadFirmas(),DB.loadPartesEnviados(),DB.loadPartesProforma(),DB.loadPartesFactura(),DB.loadPartesBaja()]).then(function(a){ S.partesAlbaranados=a[0]; S.partesRecibidos=a[1]; S.firmas=a[2]; S.partesEnviados=a[3]; S.partesProforma=a[4]; S.partesFactura=a[5]; S.partesBaja=a[6]; render(); toast('Actualizado.'); }).catch(function(e){ toast('No se pudo: '+esc(errTxt(e))); }); };
 A.albMarcar=function(f,t,cli){ if(!puedoEditar()){ toast('Sin permiso.'); return; } DB.marcarAlbaranado(f,t,cli).then(function(){ return DB.loadPartesAlbaranados(); }).then(function(m){ S.partesAlbaranados=m; render(); toast('Albaranado.'); }).catch(function(e){ toast('No se pudo: '+esc(errTxt(e))); }); };
 A.albQuitar=function(f,t,cli){ if(!puedoEditar()){ toast('Sin permiso.'); return; } DB.quitarAlbaranado(f,t,cli).then(function(){ return DB.loadPartesAlbaranados(); }).then(function(m){ S.partesAlbaranados=m; render(); toast('Albar\u00e1n quitado.'); }).catch(function(e){ toast('No se pudo: '+esc(errTxt(e))); }); };
-A.albMarcarRec=function(fecha,tec){ if(!puedoEditar()){ toast('Sin permiso.'); return; } DB.marcarRecibidoParte(fecha,tec).then(function(){ return DB.loadPartesRecibidos(); }).then(function(m){ S.partesRecibidos=m; render(); toast('Marcado como recibido.'); }).catch(function(e){ toast('No se pudo: '+esc(errTxt(e))); }); };
+A.albMarcarRec=function(fecha,tec,cli){ if(!puedoEditar()){ toast('Sin permiso.'); return; } DB.marcarRecibidoParte(fecha,tec,cli).then(function(){ return DB.loadPartesRecibidos(); }).then(function(m){ S.partesRecibidos=m; render(); toast('Marcado como recibido.'); }).catch(function(e){ toast('No se pudo: '+esc(errTxt(e))); }); };
+A.albQuitarRec=function(fecha,tec,cli){ if(!puedoEditar()){ toast('Sin permiso.'); return; } DB.quitarRecibidoParte(fecha,tec,cli).then(function(){ return DB.loadPartesRecibidos(); }).then(function(m){ S.partesRecibidos=m; render(); toast('Recibido quitado.'); }).catch(function(e){ toast('No se pudo: '+esc(errTxt(e))); }); };
 A.marcarProforma=function(f,t,cli){ if(!puedoEditar()){ toast('Sin permiso.'); return; } DB.marcarProforma(f,t,cli).then(function(){ return DB.loadPartesProforma(); }).then(function(m){ S.partesProforma=m; render(); toast('Proforma marcada.'); }).catch(function(e){ toast('No se pudo: '+esc(errTxt(e))); }); };
 A.quitarProforma=function(f,t,cli){ if(!puedoEditar()){ toast('Sin permiso.'); return; } DB.quitarProforma(f,t,cli).then(function(){ return DB.loadPartesProforma(); }).then(function(m){ S.partesProforma=m; render(); toast('Proforma quitada.'); }).catch(function(e){ toast('No se pudo: '+esc(errTxt(e))); }); };
 A.marcarFactura=function(f,t,cli){ if(!puedoEditar()){ toast('Sin permiso.'); return; } DB.marcarFactura(f,t,cli).then(function(){ return DB.loadPartesFactura(); }).then(function(m){ S.partesFactura=m; render(); toast('Factura marcada.'); }).catch(function(e){ toast('No se pudo: '+esc(errTxt(e))); }); };
@@ -2974,14 +2975,13 @@ function vPartes(){
     acc+='<button class="btn sm" onclick="A.correoParte(\''+esc(t)+'\')">Correo</button> ';
     if(fi) acc+='<button class="btn sm" onclick="A.descargarFirmado(\''+esc(t)+'\')">Parte firmado</button> ';
     if(puede&&ev) acc+='<button class="btn sm" onclick="A.quitarEnvio(\''+esc(t)+'\')">Quitar envío</button> ';
-    if(puede) acc+=(rec?'<button class="btn sm" onclick="A.quitarRecibidoParte(\''+esc(t)+'\')">Quitar recibido</button>':'<button class="btn sm" onclick="A.marcarRecibidoParte(\''+esc(t)+'\')">Recibido</button>');
-    return '<tr><td class="tac"><input type="checkbox" '+((S.selPartes||{})[t]?'checked':'')+' onclick="A.selPar(\''+esc(t)+'\')"></td>'+col+'<td>'+trab+'</td><td>'+estEnv+'</td><td>'+estFir+'</td><td>'+(rec?'<span class="badge b-ok">✓</span>':'<span class="dim">—</span>')+'</td><td class="tar" style="white-space:nowrap">'+acc+'</td></tr>';
+    return '<tr><td class="tac"><input type="checkbox" '+((S.selPartes||{})[t]?'checked':'')+' onclick="A.selPar(\''+esc(t)+'\')"></td>'+col+'<td>'+trab+'</td><td>'+estEnv+'</td><td>'+estFir+'</td><td class="tar" style="white-space:nowrap">'+acc+'</td></tr>';
   }).join('');
-  if(!tecs.length) filas='<tr><td colspan="7"><div class="empty">Sin trabajos productivos planificados este día.</div></td></tr>';
+  if(!tecs.length) filas='<tr><td colspan="6"><div class="empty">Sin trabajos productivos planificados este día.</div></td></tr>';
   var cab='<div class="phead"><div><h2>Partes de trabajo</h2><div class="sub">Solo trabajo <b>PRODUCTIVO</b>. Marca varios y envía en cadena. El técnico firma desde el móvil y la firma se guarda directamente.</div></div><div class="actions"><button class="btn" onclick="A.recargarFirmas()">Actualizar firmas</button></div></div>';
   var barra='<div class="daybar"><button class="btn sm" onclick="A.dia(-1)">'+svg('prev')+'</button><button class="btn sm" onclick="A.hoy()">Hoy</button><button class="btn sm" onclick="A.dia(1)">'+svg('next')+'</button><div class="dlabel">'+esc(fmtDia(f))+'</div><input type="date" value="'+esc(f)+'" onchange="A.setDia(this.value)"><span class="dim" style="margin-left:6px">'+tecs.length+' téc. · '+nEnv+' env. · '+nFir+' firm.</span></div>';
   var acciones='<div class="gbar"><button class="btn sm" onclick="A.selTodos(\'todos\')">Todos</button><button class="btn sm" onclick="A.selTodos(\'pend\')">Pendientes</button><button class="btn sm" onclick="A.selTodos(\'no\')">Ninguno</button><div class="gsep"></div><button class="btn pri sm" onclick="A.colaEnviar()">Enviar seleccionados ('+nSel+')</button></div>';
-  var tabla='<div class="card"><table class="t"><thead><tr><th style="width:34px"></th><th style="width:150px">Técnico</th><th>Trabajos</th><th style="width:100px">Envío</th><th style="width:100px">Firma</th><th style="width:70px">Recibido</th><th class="tar">Acciones</th></tr></thead><tbody>'+filas+'</tbody></table></div>';
+  var tabla='<div class="card"><table class="t"><thead><tr><th style="width:34px"></th><th style="width:150px">Técnico</th><th>Trabajos</th><th style="width:100px">Envío</th><th style="width:100px">Firma</th><th class="tar">Acciones</th></tr></thead><tbody>'+filas+'</tbody></table></div>';
   $('main').innerHTML=cab+barra+acciones+tabla;
   inyectaFrecuencia();
 }
