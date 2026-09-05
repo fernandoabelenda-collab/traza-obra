@@ -2213,7 +2213,7 @@ function barraExcel(){
       '<button class="btn sm" id="xl_vs" onclick="A.vistaSimpleToggle()" title="Menos columnas, más control" style="border-left:1px solid #eef2f7;padding-left:8px">Vista simple</button>'+
       '<button class="btn sm" onclick="A.fillDown()" title="Selecciona un rango y copia la 1ª fila hacia abajo (Ctrl+D)">Rellenar ↓</button>'+
       '<span style="display:inline-flex;align-items:center;gap:3px;border-left:1px solid #eef2f7;padding-left:6px">Agrupar:<button class="btn sm" id="xl_sc" onclick="A.setSort(\'cliente\')" title="Filas iguales de cliente, juntas">Cliente</button><button class="btn sm" id="xl_st" onclick="A.setSort(\'tecnico\')" title="Filas de un mismo técnico, juntas">Técnico</button></span>'+
-      '<button class="btn sm" onclick="A.deshacer()" title="Deshacer (Ctrl+Z)">↶ Deshacer</button>'+
+      '<button class="btn sm dang" onclick="A.vaciarDia()" title="Borra todas las filas del d\u00eda">Vaciar d\u00eda</button>'+'<button class="btn sm" onclick="A.deshacer()" title="Deshacer (Ctrl+Z)">↶ Deshacer</button>'+
       '<button class="btn sm" onclick="A.ayudaExcel()" title="Atajos tipo Excel">?</button>'+
       '<div id="xl_help" style="display:none;position:absolute;top:42px;right:0;width:310px;background:#1b2430;color:#fff;border-radius:10px;padding:12px 14px;font-size:12px;line-height:1.75;box-shadow:0 10px 30px rgba(0,0,0,.3);text-align:left">'+
       '<b style="font-size:13px">Trabaja como en Excel</b><br>'+
@@ -2256,6 +2256,23 @@ if(typeof filasDelAmbito==='function' && !S.__fdaWrap){
 }
 A.setSort=function(m){ S.sortMode=(S.sortMode===m)?null:m; try{pintaFilas();}catch(e){} try{render();}catch(e){} };
 A.deshacer=function(){ try{ undo(); }catch(e){} };
+A.borrarSeleccion=function(){
+  if(!puedoEditar()){ toast('Tu rol es de solo consulta.'); return; }
+  var r1=sel.r,r2=sel.r; if(S.rng){ r1=Math.min(S.rng.r1,S.rng.r2); r2=Math.max(S.rng.r1,S.rng.r2); }
+  var filas=filasDelAmbito(); var ids=[]; for(var r=r1;r<=r2;r++){ if(filas[r]) ids.push(filas[r].id); }
+  if(!ids.length){ toast('Selecciona una o varias filas.'); return; }
+  if(!confirm('\u00bfBorrar '+ids.length+' fila(s)? Se borra para todos.')) return;
+  (async function(){ for(var i=0;i<ids.length;i++){ try{ await DB.remove(ids[i]); }catch(e){} } S.filas=S.filas.filter(function(x){return ids.indexOf(x.id)<0;}); S.rng=null; try{inval();}catch(e){} try{pintaFilas();}catch(e){} sel.r=Math.max(0,Math.min(sel.r,filasDelAmbito().length-1)); try{pintaSel();}catch(e){} toast(ids.length+' fila(s) borradas.'); })();
+};
+if(A.delFila && !A.__delWrap){ A.__delWrap=true; var _delFila_base=A.delFila; A.delFila=function(){ if(S.rng){ var a=Math.min(S.rng.r1,S.rng.r2),b=Math.max(S.rng.r1,S.rng.r2); if(a!==b){ A.borrarSeleccion(); return; } } return _delFila_base(); }; }
+A.vaciarDia=function(){
+  if(!puedoEditar()){ toast('Tu rol es de solo consulta.'); return; }
+  var raw=S.filas.filter(function(f){ return modo==='dia'?(f.fecha===dia):(f.fecha>=rango.desde&&f.fecha<=rango.hasta); });
+  if(!raw.length){ toast('No hay filas que vaciar.'); return; }
+  if(!confirm('\u00bfVaciar TODA la tabla '+(modo==='dia'?('del '+fmtDia(dia)):'del rango')+'? ('+raw.length+' filas). Se borra para todos.')) return;
+  var ids=raw.map(function(f){return f.id;});
+  (async function(){ for(var i=0;i<ids.length;i++){ try{ await DB.remove(ids[i]); }catch(e){} } S.filas=S.filas.filter(function(x){return ids.indexOf(x.id)<0;}); S.rng=null; try{inval();}catch(e){} try{pintaFilas();pintaSel();}catch(e){} toast('Vaciado ('+ids.length+' filas).'); })();
+};
 A.setFPlanCli=function(v){ S.fPlanCli=v||''; try{pintaFilas();}catch(e){} try{render();}catch(e){} };
 A.setFPlanTec=function(v){ S.fPlanTec=v||''; try{pintaFilas();}catch(e){} try{render();}catch(e){} };
 A.limpiaFPlan=function(){ S.fPlanCli=''; S.fPlanTec=''; try{pintaFilas();}catch(e){} try{render();}catch(e){} };
@@ -3261,9 +3278,11 @@ A.guardarFrecuencia=function(n){
    --------------------------------------------------------------------------- */
 A.dupDia=function(){
   if(!puedoEditar()){ toast('Tu rol es de solo consulta.'); return; }
-  var src=null;
-  for(var i=1;i<=7;i++){ var d=addDays(dia,-i); if(S.filas.filter(function(f){return f.fecha===d;}).length){ src=d; break; } }
-  if(!src){ toast('No hay filas en los 7 días anteriores.'); return; }
+  var def=''; for(var i=1;i<=7;i++){ var d=addDays(dia,-i); if(S.filas.filter(function(f){return f.fecha===d;}).length){ def=d; break; } }
+  var src=prompt('\u00bfDe qu\u00e9 d\u00eda quieres copiar los trabajos? (AAAA-MM-DD)', def||addDays(dia,-1));
+  if(src==null) return; src=String(src).trim();
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(src)){ toast('Fecha no v\u00e1lida. Usa AAAA-MM-DD.'); return; }
+  if(src===dia){ toast('Ese es el mismo d\u00eda.'); return; }
   var o=S.filas.filter(function(f){return f.fecha===src;});
   if(!o.length){ toast('No hay filas el '+fmtCorto(src)+'.'); return; }
   if(!confirm('Copiar '+o.length+' fila(s) del '+fmtCorto(src)+' al '+fmtCorto(dia)+'?')) return;
