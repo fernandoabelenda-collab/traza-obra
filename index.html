@@ -1932,6 +1932,15 @@ DB.quitarRecibidoParte=function(fecha,tecnico){ return SB.from('parte_recibido')
 DB.loadPartesAlbaranados=function(){ return SB.from('parte_albaranado').select('fecha,tecnico,albaranado_por,albaranado_en').then(function(r){ if(r.error) throw r.error; var m=new Map(); (r.data||[]).forEach(function(x){ m.set(x.fecha+'|'+x.tecnico,{por:x.albaranado_por,en:x.albaranado_en}); }); return m; }); };
 DB.marcarAlbaranado=function(fecha,tecnico){ return SB.from('parte_albaranado').insert({fecha:fecha,tecnico:tecnico,albaranado_por:YO.nombre||null}).then(function(r){ if(r.error && !/duplicate key/i.test(r.error.message||'')) throw r.error; }); };
 DB.quitarAlbaranado=function(fecha,tecnico){ return SB.from('parte_albaranado').delete().eq('fecha',fecha).eq('tecnico',tecnico).then(function(r){ if(r.error) throw r.error; }); };
+DB.loadPartesProforma=function(){ return SB.from('parte_proforma').select('fecha,tecnico,por,en').then(function(r){ if(r.error) throw r.error; var m=new Map(); (r.data||[]).forEach(function(x){ m.set(x.fecha+'|'+x.tecnico,{por:x.por,en:x.en}); }); return m; }); };
+DB.marcarProforma=function(f,t){ return SB.from('parte_proforma').insert({fecha:f,tecnico:t,por:YO.nombre||null}).then(function(r){ if(r.error && !/duplicate key/i.test(r.error.message||'')) throw r.error; }); };
+DB.quitarProforma=function(f,t){ return SB.from('parte_proforma').delete().eq('fecha',f).eq('tecnico',t).then(function(r){ if(r.error) throw r.error; }); };
+DB.loadPartesFactura=function(){ return SB.from('parte_factura').select('fecha,tecnico,por,en').then(function(r){ if(r.error) throw r.error; var m=new Map(); (r.data||[]).forEach(function(x){ m.set(x.fecha+'|'+x.tecnico,{por:x.por,en:x.en}); }); return m; }); };
+DB.marcarFactura=function(f,t){ return SB.from('parte_factura').insert({fecha:f,tecnico:t,por:YO.nombre||null}).then(function(r){ if(r.error && !/duplicate key/i.test(r.error.message||'')) throw r.error; }); };
+DB.quitarFactura=function(f,t){ return SB.from('parte_factura').delete().eq('fecha',f).eq('tecnico',t).then(function(r){ if(r.error) throw r.error; }); };
+DB.loadPartesBaja=function(){ return SB.from('parte_baja').select('fecha,tecnico,tipo,por,en').then(function(r){ if(r.error) throw r.error; var m=new Map(); (r.data||[]).forEach(function(x){ m.set(x.fecha+'|'+x.tecnico,{tipo:x.tipo,por:x.por,en:x.en}); }); return m; }); };
+DB.marcarBaja=function(f,t,tipo){ return SB.from('parte_baja').upsert({fecha:f,tecnico:t,tipo:tipo,por:YO.nombre||null},{onConflict:'fecha,tecnico'}).then(function(r){ if(r.error) throw r.error; }); };
+DB.quitarBaja=function(f,t){ return SB.from('parte_baja').delete().eq('fecha',f).eq('tecnico',t).then(function(r){ if(r.error) throw r.error; }); };
 
 /* Registro de envío del parte (tabla parte_enviado) */
 DB.loadPartesEnviados=function(){ return SB.from('parte_enviado').select('fecha,tecnico,email,via,enviado_por,enviado_en').then(function(r){ if(r.error) throw r.error; var o={}; (r.data||[]).forEach(function(x){ o[x.fecha+'|'+x.tecnico]={por:x.enviado_por,en:x.enviado_en,via:x.via}; }); return o; }); };
@@ -2402,8 +2411,8 @@ A.prodToggle=function(i){ var c=(S._prodCli||[])[i]; if(c==null) return; S.prodE
    enviado -> recibido (firma móvil o recibido manual) -> albaranado.
    ===================================================================== */
 function vAlbaranes(){
-  if(!puedoEditar()){ $('main').innerHTML='<div class="card"><div class="empty">Vista de gestión (albaranes/facturación).</div></div>'; return; }
-  var lineas=enAmbito();   // Albaranes NO usa el filtro compartido de otras pantallas; tiene los suyos propios
+  if(!puedoEditar()){ $('main').innerHTML='<div class="card"><div class="empty">Vista de gestión (facturación).</div></div>'; return; }
+  var lineas=enAmbito();
   var partes={};
   lineas.forEach(function(l){
     if(!esProd(l.tipo) || !l.tecnico || !l.fecha) return;
@@ -2413,64 +2422,100 @@ function vAlbaranes(){
     (l.ot?splitOT(l.ot):[]).forEach(function(x){ if(x) o.ot[x]=1; });
   });
   var env=S.partesEnviados||{}, fir=S.firmas||{}, rec=S.partesRecibidos||new Map(), alb=S.partesAlbaranados||new Map();
+  var pro=S.partesProforma||new Map(), fac=S.partesFactura||new Map(), baj=S.partesBaja||new Map();
+  var g=function(m,k){ return (m&&m.get)?m.get(k):null; };
   var arr=Object.keys(partes).map(function(k){
     var o=partes[k];
-    var firmado=!!fir[k], recMan=!!(rec.get&&rec.get(k)), albar=!!(alb.get&&alb.get(k)), enviado=!!env[k];
-    var recEf=firmado||recMan;
+    var firmado=!!fir[k], recMan=!!g(rec,k), enviado=!!env[k];
     return {k:k,fecha:o.fecha,tecnico:o.tecnico,cli:Object.keys(o.cli),ot:Object.keys(o.ot),
-            enviado:enviado,firmado:firmado,recMan:recMan,albar:albar,recEf:recEf,
-            albInfo:(alb.get&&alb.get(k))||null};
+            enviado:enviado,firmado:firmado,recMan:recMan,recEf:firmado||recMan,
+            albar:!!g(alb,k),albInfo:g(alb,k),
+            prof:!!g(pro,k),profInfo:g(pro,k),
+            fact:!!g(fac,k),factInfo:g(fac,k),
+            baja:g(baj,k)};
   });
   var total=arr.length;
-  var nAlb=arr.filter(function(x){return x.albar;}).length;
-  var nPendAlb=arr.filter(function(x){return x.recEf && !x.albar;}).length;
-  var nPendRec=arr.filter(function(x){return !x.recEf;}).length;
+  var nPendRec=arr.filter(function(x){return !x.recEf && !x.baja;}).length;
+  var nPendAlb=arr.filter(function(x){return x.recEf && !x.albar && !x.baja;}).length;
+  var nPendProf=arr.filter(function(x){return x.albar && !x.prof && !x.baja;}).length;
+  var nPendFact=arr.filter(function(x){return x.prof && !x.fact && !x.baja;}).length;
+  var nFact=arr.filter(function(x){return x.fact && !x.baja;}).length;
+  var nBaja=arr.filter(function(x){return !!x.baja;}).length;
 
   S.albFiltro=S.albFiltro||'pendalb'; S.albTec=S.albTec||'';
   var vis=arr.filter(function(x){
     if(S.albTec && x.tecnico!==S.albTec) return false;
-    if(S.albFiltro==='pendalb') return x.recEf && !x.albar;
-    if(S.albFiltro==='pendrec') return !x.recEf;
-    if(S.albFiltro==='alb') return x.albar;
-    return true;
+    switch(S.albFiltro){
+      case 'pendrec': return !x.recEf && !x.baja;
+      case 'pendalb': return x.recEf && !x.albar && !x.baja;
+      case 'pendprof': return x.albar && !x.prof && !x.baja;
+      case 'pendfact': return x.prof && !x.fact && !x.baja;
+      case 'facturado': return x.fact && !x.baja;
+      case 'baja': return !!x.baja;
+      default: return true;
+    }
   });
   vis.sort(function(a,b){ return a.fecha.localeCompare(b.fecha) || String(a.tecnico).localeCompare(String(b.tecnico),'es'); });
 
-  var amb=(modo==='dia')?fmtDia(dia):(fmtCorto(rango.desde)+' → '+fmtCorto(rango.hasta));
+  var amb=(modo==='dia')?fmtDia(dia):(fmtCorto(rango.desde)+' \u2192 '+fmtCorto(rango.hasta));
+  var kpi=function(cls,tit,n,sub){ return '<div class="kpi '+cls+'"><div class="k">'+tit+'</div><div class="v" style="font-size:20px">'+n+'</div><div class="s">'+sub+'</div></div>'; };
   var kpis='<div class="kpis" style="padding:0 0 11px">'+
-    '<div class="kpi"><div class="k">Partes del periodo</div><div class="v" style="font-size:20px">'+total+'</div><div class="s">'+esc(amb)+'</div></div>'+
-    '<div class="kpi '+(nPendAlb>0?'b':'g')+'"><div class="k">Pendientes de albaranar</div><div class="v" style="font-size:20px">'+nPendAlb+'</div><div class="s">recibidos sin albarán</div></div>'+
-    '<div class="kpi g"><div class="k">Albaranados</div><div class="v" style="font-size:20px">'+nAlb+'</div><div class="s">revisados por Lucía</div></div>'+
-    '<div class="kpi '+(nPendRec>0?'a':'')+'"><div class="k">Pendientes de recibir</div><div class="v" style="font-size:20px">'+nPendRec+'</div><div class="s">sin firma ni recepción</div></div></div>';
+    kpi('','Partes del periodo',total,esc(amb))+
+    kpi(nPendAlb>0?'b':'g','Pend. albaranar',nPendAlb,'recibidos sin albar\u00e1n')+
+    kpi(nPendProf>0?'a':'g','Pend. proforma',nPendProf,'albaranados sin proforma')+
+    kpi(nPendFact>0?'a':'g','Pend. factura',nPendFact,'proforma sin factura')+
+    kpi('g','Facturados',nFact,'ciclo completo')+
+    kpi(nBaja>0?'b':'','Cancel./No fact.',nBaja,'fuera de facturaci\u00f3n')+'</div>';
 
   var bt=function(v,txt,n){ return '<button class="btn sm '+(S.albFiltro===v?'on':'')+'" onclick="A.setAlbFiltro(\''+v+'\')">'+txt+' ('+n+')</button>'; };
-  var tecOpts='<option value="">Todos los técnicos</option>'+tecActivos().map(function(t){return '<option value="'+esc(t)+'"'+(S.albTec===t?' selected':'')+'>'+esc(t)+'</option>';}).join('');
-  var barra='<div class="searchbar" style="margin-bottom:8px">'+bt('pendalb','Pendientes de albaranar',nPendAlb)+bt('pendrec','Pendientes de recibir',nPendRec)+bt('alb','Albaranados',nAlb)+bt('todos','Todos',total)+
+  var tecOpts='<option value="">Todos los t\u00e9cnicos</option>'+tecActivos().map(function(t){return '<option value="'+esc(t)+'"'+(S.albTec===t?' selected':'')+'>'+esc(t)+'</option>';}).join('');
+  var barra='<div class="searchbar" style="margin-bottom:8px;flex-wrap:wrap">'+
+    bt('pendrec','Pend. recibir',nPendRec)+bt('pendalb','Pend. albaranar',nPendAlb)+bt('pendprof','Pend. proforma',nPendProf)+bt('pendfact','Pend. factura',nPendFact)+bt('facturado','Facturados',nFact)+bt('baja','Cancel./No fact.',nBaja)+bt('todos','Todos',total)+
     '<select onchange="A.setAlbTec(this.value)" style="margin-left:6px">'+tecOpts+'</select></div>';
 
+  var qq=function(s){ return String(s).replace(/'/g,"\\'"); };
+  var etapa=function(done,info,fecha,tec,marcarFn,quitarFn,label){
+    if(done) return '<span class="badge b-ok">\u2713</span>'+(info&&info.por?' <span class="dim" style="font-size:10px">'+esc(info.por)+'</span>':'')+' <button class="btn sm" onclick="'+quitarFn+'(\''+qq(fecha)+'\',\''+qq(tec)+'\')">quitar</button>';
+    return '<button class="btn sm" onclick="'+marcarFn+'(\''+qq(fecha)+'\',\''+qq(tec)+'\')">'+label+'</button>';
+  };
   var filas=vis.map(function(x){
-    var recTxt = x.firmado?'<span class="badge b-ok">✓ Firmado móvil</span>':(x.recMan?'<span class="badge b-ok">✓ Recibido (PDF/correo)</span>':(x.enviado?'<span class="badge b-warn">Enviado, sin recibir</span>':'<span class="badge b-gray">Sin enviar</span>'));
-    var albTxt = x.albar?('<span class="badge b-ok">✓ Albaranado</span>'+(x.albInfo&&x.albInfo.por?'<br><span class="dim" style="font-size:10px">'+esc(x.albInfo.por)+'</span>':'')):'<span class="dim">—</span>';
-    var trabajos='<span class="dim" style="font-size:11.5px">'+(x.cli.map(esc).join(', ')||'-')+(x.ot.length?' · OT '+x.ot.map(esc).join('/'):'')+'</span>';
-    var acc='';
-    if(!x.recEf) acc+='<button class="btn sm" onclick="A.albMarcarRec(\''+esc(x.fecha)+'\',\''+esc(x.tecnico)+'\')">Marcar recibido</button> ';
-    if(x.recEf && !x.albar) acc+='<button class="btn sm pri" onclick="A.albMarcar(\''+esc(x.fecha)+'\',\''+esc(x.tecnico)+'\')">Albaranar</button> ';
-    if(x.albar) acc+='<button class="btn sm" onclick="A.albQuitar(\''+esc(x.fecha)+'\',\''+esc(x.tecnico)+'\')">Quitar albarán</button> ';
-    var bg = x.albar?'' : (x.recEf?' style="background:#FFF7E6"':(x.enviado?' style="background:#FFF1F0"':''));
-    return '<tr'+bg+'><td class="mono">'+esc(fmtCorto(x.fecha))+'</td><td><b>'+esc(x.tecnico)+'</b></td><td>'+trabajos+'</td><td>'+recTxt+'</td><td>'+albTxt+'</td><td class="tar" style="white-space:nowrap">'+acc+'</td></tr>';
+    var trabajos='<span class="dim" style="font-size:11.5px">'+(x.cli.map(esc).join(', ')||'-')+(x.ot.length?' \u00b7 OT '+x.ot.map(esc).join('/'):'')+'</span>';
+    var recCell = x.firmado?'<span class="badge b-ok">\u2713 Firmado</span>':(x.recMan?'<span class="badge b-ok">\u2713 Recibido</span>':'<button class="btn sm" onclick="A.albMarcarRec(\''+qq(x.fecha)+'\',\''+qq(x.tecnico)+'\')">Marcar recibido</button>');
+    var albCell = etapa(x.albar,x.albInfo,x.fecha,x.tecnico,'A.albMarcar','A.albQuitar','Albaranar');
+    var profCell = etapa(x.prof,x.profInfo,x.fecha,x.tecnico,'A.marcarProforma','A.quitarProforma','Proforma');
+    var factCell = etapa(x.fact,x.factInfo,x.fecha,x.tecnico,'A.marcarFactura','A.quitarFactura','Facturar');
+    var acc, bg='';
+    if(x.baja){
+      bg=' style="background:#F3F4F6"';
+      var tt=(x.baja.tipo==='NO FACTURABLE')?'No facturable':'Cancelado';
+      acc='<span class="badge b-bad">'+esc(tt)+'</span> <button class="btn sm" onclick="A.quitarBaja(\''+qq(x.fecha)+'\',\''+qq(x.tecnico)+'\')">Reactivar</button>';
+      recCell = x.recEf?'<span class="badge b-ok">\u2713</span>':'<span class="dim">\u2014</span>';
+      albCell = x.albar?'<span class="badge b-ok">\u2713</span>':'<span class="dim">\u2014</span>';
+      profCell = x.prof?'<span class="badge b-ok">\u2713</span>':'<span class="dim">\u2014</span>';
+      factCell = x.fact?'<span class="badge b-ok">\u2713</span>':'<span class="dim">\u2014</span>';
+    } else {
+      acc='<button class="btn sm dang" onclick="A.marcarBaja(\''+qq(x.fecha)+'\',\''+qq(x.tecnico)+'\',\'CANCELADO\')">Cancelar</button> <button class="btn sm" onclick="A.marcarBaja(\''+qq(x.fecha)+'\',\''+qq(x.tecnico)+'\',\'NO FACTURABLE\')">No facturable</button>';
+    }
+    return '<tr'+bg+'><td class="mono">'+esc(fmtCorto(x.fecha))+'</td><td><b>'+esc(x.tecnico)+'</b></td><td>'+trabajos+'</td><td>'+recCell+'</td><td>'+albCell+'</td><td>'+profCell+'</td><td>'+factCell+'</td><td class="tar" style="white-space:nowrap">'+acc+'</td></tr>';
   }).join('');
-  if(!vis.length) filas='<tr><td colspan="6"><div class="empty">'+(S.albFiltro==='pendalb'?'✔ No queda ningún parte pendiente de albaranar en este periodo.':'Sin partes en este filtro.')+'</div></td></tr>';
+  if(!vis.length) filas='<tr><td colspan="8"><div class="empty">'+(S.albFiltro==='pendalb'?'\u2714 No queda ning\u00fan parte pendiente de albaranar en este periodo.':'Sin partes en este filtro.')+'</div></td></tr>';
 
-  var cab='<div class="phead"><div><h2>Control de albaranes</h2><div class="sub">Un parte por <b>técnico y día</b>. Lucía marca <b>Albaranar</b> cuando lo ha revisado y albaranado. Filtra por <b>Pendientes de albaranar</b> para ver de un vistazo lo que falta. Los recibidos por <b>PDF/correo</b> se marcan con <b>Marcar recibido</b>.</div></div><div class="actions"><button class="btn" onclick="A.recargarAlbaranes()">Actualizar</button></div></div>';
-  var tabla='<div class="card"><table class="t"><thead><tr><th style="width:80px">Fecha</th><th style="width:190px">Técnico</th><th>Trabajos</th><th style="width:150px">Recepción</th><th style="width:130px">Albarán</th><th class="tar">Acción</th></tr></thead><tbody>'+filas+'</tbody></table></div>';
+  var cab='<div class="phead"><div><h2>Control de facturaci\u00f3n</h2><div class="sub">Un parte por <b>t\u00e9cnico y d\u00eda</b>. Ciclo: <b>Recepci\u00f3n \u2192 Albar\u00e1n \u2192 Proforma \u2192 Factura</b>. Puedes marcar <b>Cancelado</b> o <b>No facturable</b> en cualquier momento. Los pasos siguen el orden l\u00f3gico pero no bloquean (hay excepciones).</div></div><div class="actions"><button class="btn" onclick="A.recargarAlbaranes()">Actualizar</button></div></div>';
+  var tabla='<div class="card" style="overflow:auto"><table class="t"><thead><tr><th style="width:76px">Fecha</th><th style="width:180px">T\u00e9cnico</th><th>Trabajos</th><th style="width:130px">Recepci\u00f3n</th><th style="width:120px">Albar\u00e1n</th><th style="width:120px">Proforma</th><th style="width:120px">Factura</th><th class="tar" style="width:170px">Acci\u00f3n</th></tr></thead><tbody>'+filas+'</tbody></table></div>';
   $('main').innerHTML=cab+barraFecha()+barra+kpis+tabla;
 }
 A.setAlbFiltro=function(v){ S.albFiltro=v; render(); };
 A.setAlbTec=function(v){ S.albTec=v; render(); };
-A.recargarAlbaranes=function(){ Promise.all([DB.loadPartesAlbaranados(),DB.loadPartesRecibidos(),DB.loadFirmas(),DB.loadPartesEnviados()]).then(function(a){ S.partesAlbaranados=a[0]; S.partesRecibidos=a[1]; S.firmas=a[2]; S.partesEnviados=a[3]; render(); toast('Actualizado.'); }).catch(function(e){ toast('No se pudo: '+esc(errTxt(e))); }); };
+A.recargarAlbaranes=function(){ Promise.all([DB.loadPartesAlbaranados(),DB.loadPartesRecibidos(),DB.loadFirmas(),DB.loadPartesEnviados(),DB.loadPartesProforma(),DB.loadPartesFactura(),DB.loadPartesBaja()]).then(function(a){ S.partesAlbaranados=a[0]; S.partesRecibidos=a[1]; S.firmas=a[2]; S.partesEnviados=a[3]; S.partesProforma=a[4]; S.partesFactura=a[5]; S.partesBaja=a[6]; render(); toast('Actualizado.'); }).catch(function(e){ toast('No se pudo: '+esc(errTxt(e))); }); };
 A.albMarcar=function(fecha,tec){ if(!puedoEditar()){ toast('Sin permiso.'); return; } DB.marcarAlbaranado(fecha,tec).then(function(){ return DB.loadPartesAlbaranados(); }).then(function(m){ S.partesAlbaranados=m; render(); toast('Parte albaranado.'); }).catch(function(e){ toast('No se pudo: '+esc(errTxt(e))); }); };
-A.albQuitar=function(fecha,tec){ if(!puedoEditar()){ toast('Sin permiso.'); return; } DB.quitarAlbaranado(fecha,tec).then(function(){ return DB.loadPartesAlbaranados(); }).then(function(m){ S.partesAlbaranados=m; render(); toast('Albarán quitado.'); }).catch(function(e){ toast('No se pudo: '+esc(errTxt(e))); }); };
+A.albQuitar=function(fecha,tec){ if(!puedoEditar()){ toast('Sin permiso.'); return; } DB.quitarAlbaranado(fecha,tec).then(function(){ return DB.loadPartesAlbaranados(); }).then(function(m){ S.partesAlbaranados=m; render(); toast('Albar\u00e1n quitado.'); }).catch(function(e){ toast('No se pudo: '+esc(errTxt(e))); }); };
 A.albMarcarRec=function(fecha,tec){ if(!puedoEditar()){ toast('Sin permiso.'); return; } DB.marcarRecibidoParte(fecha,tec).then(function(){ return DB.loadPartesRecibidos(); }).then(function(m){ S.partesRecibidos=m; render(); toast('Marcado como recibido.'); }).catch(function(e){ toast('No se pudo: '+esc(errTxt(e))); }); };
+A.marcarProforma=function(f,t){ if(!puedoEditar()){ toast('Sin permiso.'); return; } DB.marcarProforma(f,t).then(function(){ return DB.loadPartesProforma(); }).then(function(m){ S.partesProforma=m; render(); toast('Proforma marcada.'); }).catch(function(e){ toast('No se pudo: '+esc(errTxt(e))); }); };
+A.quitarProforma=function(f,t){ if(!puedoEditar()){ toast('Sin permiso.'); return; } DB.quitarProforma(f,t).then(function(){ return DB.loadPartesProforma(); }).then(function(m){ S.partesProforma=m; render(); toast('Proforma quitada.'); }).catch(function(e){ toast('No se pudo: '+esc(errTxt(e))); }); };
+A.marcarFactura=function(f,t){ if(!puedoEditar()){ toast('Sin permiso.'); return; } DB.marcarFactura(f,t).then(function(){ return DB.loadPartesFactura(); }).then(function(m){ S.partesFactura=m; render(); toast('Factura marcada.'); }).catch(function(e){ toast('No se pudo: '+esc(errTxt(e))); }); };
+A.quitarFactura=function(f,t){ if(!puedoEditar()){ toast('Sin permiso.'); return; } DB.quitarFactura(f,t).then(function(){ return DB.loadPartesFactura(); }).then(function(m){ S.partesFactura=m; render(); toast('Factura quitada.'); }).catch(function(e){ toast('No se pudo: '+esc(errTxt(e))); }); };
+A.marcarBaja=function(f,t,tipo){ if(!puedoEditar()){ toast('Sin permiso.'); return; } DB.marcarBaja(f,t,tipo).then(function(){ return DB.loadPartesBaja(); }).then(function(m){ S.partesBaja=m; render(); toast(tipo==='NO FACTURABLE'?'Marcado como no facturable.':'Parte cancelado.'); }).catch(function(e){ toast('No se pudo: '+esc(errTxt(e))); }); };
+A.quitarBaja=function(f,t){ if(!puedoEditar()){ toast('Sin permiso.'); return; } DB.quitarBaja(f,t).then(function(){ return DB.loadPartesBaja(); }).then(function(m){ S.partesBaja=m; render(); toast('Reactivado.'); }).catch(function(e){ toast('No se pudo: '+esc(errTxt(e))); }); };
 
 /* ---------------------------------------------------------------------------
    3) GENERADORES DE PARTE (documento imprimible / PDF)
@@ -3246,7 +3291,7 @@ navAdd({id:'calendario',t:'Calendario',ic:'cal'},false);
     navAdd({id:'partes',t:'Partes de trabajo',ic:'doc'},false);
     if(puedoEditar()) navAdd({id:'gestec',t:'Técnicos',ic:'doc'},false);
     if(puedoEditar()) navAdd({id:'gescli',t:'Clientes',ic:'doc'},false);
-    if(puedoEditar()) navAdd({id:'albaranes',t:'Albaranes',ic:'doc'},false);
+    if(puedoEditar()) navAdd({id:'albaranes',t:'Control Facturación',ic:'doc'},false);
     if(puedoEditar()) navAdd({id:'listas',t:'Listas',ic:'doc'},false);
     try{ renderNav(); }catch(e){}
     DB.loadTecnicos().then(function(d){ S.tecnicosMaestro=d; try{refreshDL();}catch(e){} try{barraFiltrosPlan();}catch(e){} if(view==='gestec') render(); }).catch(function(){});
@@ -3258,6 +3303,9 @@ navAdd({id:'calendario',t:'Calendario',ic:'cal'},false);
     DB.loadCorreos().then(function(m){ S.correos=m; }).catch(function(){});
     DB.loadPartesRecibidos().then(function(m){ S.partesRecibidos=m; if(view==='partes'||view==='albaranes') render(); }).catch(function(){});
     DB.loadPartesAlbaranados().then(function(m){ S.partesAlbaranados=m; if(view==='albaranes') render(); }).catch(function(){});
+    DB.loadPartesProforma().then(function(m){ S.partesProforma=m; if(view==='albaranes') render(); }).catch(function(){});
+    DB.loadPartesFactura().then(function(m){ S.partesFactura=m; if(view==='albaranes') render(); }).catch(function(){});
+    DB.loadPartesBaja().then(function(m){ S.partesBaja=m; if(view==='albaranes') render(); }).catch(function(){});
     DB.loadFestLocal().then(function(o){ S.festLocal=o; if(view==='horasfuera') render(); }).catch(function(){});
     DB.loadFrecPartes().then(function(o){ S.frecPartes=o; if(view==='partes') render(); }).catch(function(){});
     DB.loadFirmas().then(function(o){ S.firmas=o; if(view==='partes') render(); }).catch(function(){});
