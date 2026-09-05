@@ -2442,9 +2442,10 @@ function vAlbaranes(){
   var nFact=arr.filter(function(x){return x.fact && !x.baja;}).length;
   var nBaja=arr.filter(function(x){return !!x.baja;}).length;
 
-  S.albFiltro=S.albFiltro||'pendalb'; S.albTec=S.albTec||'';
+  S.albFiltro=S.albFiltro||'pendalb'; S.albTec=S.albTec||''; S.albCli=S.albCli||'';
   var vis=arr.filter(function(x){
     if(S.albTec && x.tecnico!==S.albTec) return false;
+    if(S.albCli){ var nc=normNom(S.albCli); if(!x.cli.some(function(c){return normNom(c)===nc;})) return false; }
     switch(S.albFiltro){
       case 'pendrec': return !x.recEf && !x.baja;
       case 'pendalb': return x.recEf && !x.albar && !x.baja;
@@ -2469,8 +2470,10 @@ function vAlbaranes(){
 
   var bt=function(v,txt,n){ return '<button class="btn sm '+(S.albFiltro===v?'on':'')+'" onclick="A.setAlbFiltro(\''+v+'\')">'+txt+' ('+n+')</button>'; };
   var tecOpts='<option value="">Todos los t\u00e9cnicos</option>'+tecActivos().map(function(t){return '<option value="'+esc(t)+'"'+(S.albTec===t?' selected':'')+'>'+esc(t)+'</option>';}).join('');
+  var cliOpts='<option value="">Todos los clientes</option>'+cliActivos().map(function(c){return '<option value="'+esc(c)+'"'+(S.albCli===c?' selected':'')+'>'+esc(c)+'</option>';}).join('');
   var barra='<div class="searchbar" style="margin-bottom:8px;flex-wrap:wrap">'+
     bt('pendrec','Pend. recibir',nPendRec)+bt('pendalb','Pend. albaranar',nPendAlb)+bt('pendprof','Pend. proforma',nPendProf)+bt('pendfact','Pend. factura',nPendFact)+bt('facturado','Facturados',nFact)+bt('baja','Cancel./No fact.',nBaja)+bt('todos','Todos',total)+
+    '<select onchange="A.setAlbCli(this.value)" style="margin-left:6px">'+cliOpts+'</select>'+
     '<select onchange="A.setAlbTec(this.value)" style="margin-left:6px">'+tecOpts+'</select></div>';
 
   var qq=function(s){ return String(s).replace(/'/g,"\\'"); };
@@ -2506,6 +2509,7 @@ function vAlbaranes(){
 }
 A.setAlbFiltro=function(v){ S.albFiltro=v; render(); };
 A.setAlbTec=function(v){ S.albTec=v; render(); };
+A.setAlbCli=function(v){ S.albCli=v; render(); };
 A.recargarAlbaranes=function(){ Promise.all([DB.loadPartesAlbaranados(),DB.loadPartesRecibidos(),DB.loadFirmas(),DB.loadPartesEnviados(),DB.loadPartesProforma(),DB.loadPartesFactura(),DB.loadPartesBaja()]).then(function(a){ S.partesAlbaranados=a[0]; S.partesRecibidos=a[1]; S.firmas=a[2]; S.partesEnviados=a[3]; S.partesProforma=a[4]; S.partesFactura=a[5]; S.partesBaja=a[6]; render(); toast('Actualizado.'); }).catch(function(e){ toast('No se pudo: '+esc(errTxt(e))); }); };
 A.albMarcar=function(fecha,tec){ if(!puedoEditar()){ toast('Sin permiso.'); return; } DB.marcarAlbaranado(fecha,tec).then(function(){ return DB.loadPartesAlbaranados(); }).then(function(m){ S.partesAlbaranados=m; render(); toast('Parte albaranado.'); }).catch(function(e){ toast('No se pudo: '+esc(errTxt(e))); }); };
 A.albQuitar=function(fecha,tec){ if(!puedoEditar()){ toast('Sin permiso.'); return; } DB.quitarAlbaranado(fecha,tec).then(function(){ return DB.loadPartesAlbaranados(); }).then(function(m){ S.partesAlbaranados=m; render(); toast('Albar\u00e1n quitado.'); }).catch(function(e){ toast('No se pudo: '+esc(errTxt(e))); }); };
