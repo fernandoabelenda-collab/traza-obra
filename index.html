@@ -2213,7 +2213,7 @@ function barraExcel(){
       '<button class="btn sm" id="xl_vs" onclick="A.vistaSimpleToggle()" title="Menos columnas, más control" style="border-left:1px solid #eef2f7;padding-left:8px">Vista simple</button>'+
       '<button class="btn sm" onclick="A.fillDown()" title="Selecciona un rango y copia la 1ª fila hacia abajo (Ctrl+D)">Rellenar ↓</button>'+
       '<span style="display:inline-flex;align-items:center;gap:3px;border-left:1px solid #eef2f7;padding-left:6px">Agrupar:<button class="btn sm" id="xl_sc" onclick="A.setSort(\'cliente\')" title="Filas iguales de cliente, juntas">Cliente</button><button class="btn sm" id="xl_st" onclick="A.setSort(\'tecnico\')" title="Filas de un mismo técnico, juntas">Técnico</button></span>'+
-      '<button class="btn sm dang" onclick="A.vaciarDia()" title="Borra todas las filas del d\u00eda">Vaciar d\u00eda</button>'+'<button class="btn sm" onclick="A.deshacer()" title="Deshacer (Ctrl+Z)">↶ Deshacer</button>'+
+      '<button class="btn sm" onclick="A.importarProduccion()" title="Rellena PRODUCCION EUR desde produccion y marca Recibido">\u2b73 Importar producci\u00f3n \u20ac</button>'+'<button class="btn sm dang" onclick="A.vaciarDia()" title="Borra todas las filas del d\u00eda">Vaciar d\u00eda</button>'+'<button class="btn sm" onclick="A.deshacer()" title="Deshacer (Ctrl+Z)">↶ Deshacer</button>'+
       '<button class="btn sm" onclick="A.ayudaExcel()" title="Atajos tipo Excel">?</button>'+
       '<div id="xl_help" style="display:none;position:absolute;top:42px;right:0;width:310px;background:#1b2430;color:#fff;border-radius:10px;padding:12px 14px;font-size:12px;line-height:1.75;box-shadow:0 10px 30px rgba(0,0,0,.3);text-align:left">'+
       '<b style="font-size:13px">Trabaja como en Excel</b><br>'+
@@ -2272,6 +2272,69 @@ A.vaciarDia=function(){
   if(!confirm('\u00bfVaciar TODA la tabla '+(modo==='dia'?('del '+fmtDia(dia)):'del rango')+'? ('+raw.length+' filas). Se borra para todos.')) return;
   var ids=raw.map(function(f){return f.id;});
   (async function(){ for(var i=0;i<ids.length;i++){ try{ await DB.remove(ids[i]); }catch(e){} } S.filas=S.filas.filter(function(x){return ids.indexOf(x.id)<0;}); S.rng=null; try{inval();}catch(e){} try{pintaFilas();pintaSel();}catch(e){} toast('Vaciado ('+ids.length+' filas).'); })();
+};
+/* ===== FASE 2 · Importar producción (produccion -> PRODUCCIÓN € + Recibido) ===== */
+function _cliFam(c){ var n=normNom(c||''); if(n.indexOf('NAVANTIA')>=0) return 'NAVANTIA'; if(n.indexOf('MONCOBRA')>=0) return 'MONCOBRA'; return n; }
+function _tecSet(s){ return splitTecnicos(s).map(function(t){return normNom(t);}).sort().join('|'); }
+function _centroProd(ast){ var a=String(ast||'').trim().toUpperCase(); if(a==='SF') return 'SAN FERNANDO'; if(a==='PR') return 'PUERTO REAL'; return ''; }
+function _informeImport(rell,amb,noc,d1,d2){
+  var k=function(cls,t,n,s){return '<div class="kpi '+cls+'"><div class="k">'+t+'</div><div class="v">'+n+'</div><div class="s">'+s+'</div></div>';};
+  var head='<div class="grid3">'+k('g','Rellenadas',rell.length,'prod € + recibido')+k(amb.length?'w':'','Ambiguas',amb.length,'varias líneas')+k(noc.length?'w':'','No casadas',noc.length,'sin línea')+'</div>';
+  var tabla=function(tit,arr,motivo){
+    if(!arr.length) return '';
+    var fs=arr.map(function(u){var g=u.g;return '<tr><td class="mono">'+esc(fmtCorto(g.fecha))+'</td><td>'+esc(g.tecMuestra)+'</td><td>'+esc(g.cliMuestra)+(g.centro?' <span class="dim">('+esc(g.centro)+')</span>':'')+'</td><td class="tar mono">'+g.imp.toFixed(2)+' €</td><td class="dim">'+esc(motivo(u))+'</td></tr>';}).join('');
+    return '<h4 style="margin:12px 0 4px">'+tit+' ('+arr.length+')</h4><div style="max-height:190px;overflow:auto"><table class="t"><thead><tr><th>Fecha</th><th>Técnico(s)</th><th>Cliente</th><th class="tar">Importe</th><th>Motivo</th></tr></thead><tbody>'+fs+'</tbody></table></div>';
+  };
+  var body=head+tabla('No casadas — rellénalas a mano',noc,function(u){return u.err||'no existe esa línea en Planificación';})+tabla('Ambiguas — elige a mano',amb,function(u){return u.n+' líneas posibles';});
+  openModal('<h3>Importar producción · '+esc(fmtCorto(d1))+' → '+esc(fmtCorto(d2))+'</h3><div class="mbody">'+body+'<div style="margin-top:14px;text-align:right"><button class="btn" onclick="closeModal()">Cerrar</button></div></div>');
+}
+A.importarProduccion=function(){
+  if(!puedoEditar()){ toast('Tu rol es de solo consulta.'); return; }
+  var d1=modo==='dia'?dia:rango.desde, d2=modo==='dia'?dia:rango.hasta, hoy=todayISO();
+  if(d2>hoy) d2=hoy;
+  if(d1>d2){ toast('Ese periodo es futuro; solo se importa hasta hoy.'); return; }
+  if(!confirm('¿Importar producción de '+fmtCorto(d1)+' a '+fmtCorto(d2)+'?\nRellenará PRODUCCIÓN € (sobrescribe) y marcará Recibido en las líneas que casen.')) return;
+  toast('Leyendo producción…');
+  SB.from('produccion').select('fecha,cliente,tecnico,importe,es_navantia,astillero').gte('fecha',d1).lte('fecha',d2).then(function(r){
+    if(r.error) throw r.error;
+    var groups={};
+    (r.data||[]).forEach(function(x){
+      if(!x.fecha || x.fecha>hoy) return;
+      var fam=_cliFam(x.cliente), centro=_centroProd(x.astillero), tset=_tecSet(x.tecnico);
+      var kk=x.fecha+'||'+tset+'||'+fam+'||'+centro;
+      var g=groups[kk]||(groups[kk]={fecha:x.fecha,tset:tset,fam:fam,centro:centro,imp:0,cliMuestra:x.cliente||'',tecMuestra:x.tecnico||''});
+      g.imp+=(parseFloat(x.importe)||0);
+    });
+    var updates=[],amb=[],noc=[];
+    Object.keys(groups).forEach(function(kk){
+      var g=groups[kk];
+      var cand=S.filas.filter(function(f){
+        if(f.fecha!==g.fecha||!esProd(f.tipo)) return false;
+        if(_tecSet(f.tecnicos)!==g.tset) return false;
+        if(_cliFam(f.cliente)!==g.fam) return false;
+        if(g.centro && normNom(f.centro||'').indexOf(normNom(g.centro))<0) return false;
+        return true;
+      });
+      if(cand.length===1) updates.push({row:cand[0],g:g});
+      else if(cand.length>1) amb.push({g:g,n:cand.length});
+      else noc.push({g:g});
+    });
+    (async function(){
+      var rell=[];
+      for(var i=0;i<updates.length;i++){
+        var u=updates[i], val=Math.round(u.g.imp*100)/100;
+        try{
+          await DB.update(u.row.id,{prod:val}); u.row.prod=val; rell.push(u);
+          if(val>0){ var ts=splitTecnicos(u.row.tecnicos), cli=u.row.cliente||''; for(var j=0;j<ts.length;j++){ try{ await DB.marcarRecibidoParte(u.row.fecha,ts[j],cli); }catch(e){} } }
+        }catch(e){ noc.push({g:u.g,err:errTxt(e)}); }
+      }
+      try{inval();}catch(e){}
+      try{ S.partesRecibidos=await DB.loadPartesRecibidos(); }catch(e){}
+      render();
+      _informeImport(rell,amb,noc,d1,d2);
+      toast(rell.length+' línea(s) rellenada(s).');
+    })();
+  }).catch(function(e){ toast('No se pudo leer producción: '+esc(errTxt(e))); });
 };
 A.setFPlanCli=function(v){ S.fPlanCli=v||''; try{pintaFilas();}catch(e){} try{render();}catch(e){} };
 A.setFPlanTec=function(v){ S.fPlanTec=v||''; try{pintaFilas();}catch(e){} try{render();}catch(e){} };
