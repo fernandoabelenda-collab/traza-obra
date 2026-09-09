@@ -3399,8 +3399,8 @@ navAdd({id:'calendario',t:'Calendario',ic:'cal'},false);
     DB.loadPartesFactura().then(function(m){ S.partesFactura=m; if(view==='albaranes') render(); }).catch(function(){});
     DB.loadPartesBaja().then(function(m){ S.partesBaja=m; if(view==='albaranes') render(); }).catch(function(){});
     DB.loadFestLocal().then(function(o){ S.festLocal=o; if(view==='horasfuera') render(); }).catch(function(){});
-    DB.loadFrecPartes().then(function(o){ S.frecPartes=o; if(view==='partes') render(); }).catch(function(){});
-    DB.loadFirmas().then(function(o){ S.firmas=o; if(view==='partes') render(); }).catch(function(){});
+    DB.loadFrecPartes().then(function(o){ S.frecPartes=o; if(view==='partes'||view==='albaranes') render(); }).catch(function(){});
+    DB.loadFirmas().then(function(o){ S.firmas=o; if(view==='partes'||view==='albaranes') render(); }).catch(function(){});
     DB.loadPartesEnviados().then(function(o){ S.partesEnviados=o; if(view==='partes') render(); compruebaAvisoPartes(); }).catch(function(){});
     /* Recordatorio recurrente de partes de mañana (15:30) */
     setInterval(compruebaAvisoPartes,120000);
