@@ -1877,7 +1877,7 @@ function filsDueDe(t,f){
 /* Un técnico "toca hoy" si le queda al menos una fila que enviar */
 function tecDueHoy(tec,fecha){ return filsDueDe(tec,fecha).length>0; }
 /* ¿La línea (L() por técnico) toca hoy según su frecuencia? Usado por Control Facturación. */
-function lineaDue(l){ var ots=splitOT(l.ot).filter(function(o){ return o && /\d/.test(o); }); if(!ots.length) return esDueHoy(l.tecnico,'*',l.fecha); return ots.some(function(o){ return esDueHoy(l.tecnico,o,l.fecha); }); }
+function lineaDue(l){ var ots=(l.ots||[]).filter(function(o){ return o && /\d/.test(o); }); if(!ots.length) return esDueHoy(l.tecnico,'*',l.fecha); return ots.some(function(o){ return esDueHoy(l.tecnico,o,l.fecha); }); }
 
 /* Ausencias: días laborables por técnico (excluye finde, festivo nac. y festivo local por técnico) */
 function esLaborable(iso,tec){ if(!iso) return false; var dw=new Date(iso+'T12:00:00').getDay(); if(dw===0||dw===6) return false; if(FEST_NOM[iso]) return false; if(S.festLocal && S.festLocal[iso+'|'+tec]) return false; return true; }
@@ -2502,7 +2502,7 @@ function vAlbaranes(){
     var cli=(l.cliente||'').trim()||'(sin cliente)';
     var k=l.fecha+'|'+l.tecnico+'|'+cli;
     var o=partes[k]||(partes[k]={fecha:l.fecha,tecnico:l.tecnico,cliente:cli,ot:{}});
-    (l.ot?splitOT(l.ot):[]).forEach(function(x){ if(x) o.ot[x]=1; });
+    (l.ots||[]).forEach(function(x){ if(x) o.ot[x]=1; });
   });
   var env=S.partesEnviados||{}, fir=S.firmas||{}, rec=S.partesRecibidos||new Map(), alb=S.partesAlbaranados||new Map();
   var pro=S.partesProforma||new Map(), fac=S.partesFactura||new Map(), baj=S.partesBaja||new Map();
