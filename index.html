@@ -1858,7 +1858,7 @@ function fEsLab(iso){ if(!iso) return false; var dw=new Date(iso+'T12:00:00').ge
 function lunesDe(iso){ var d=new Date(iso+'T12:00:00'); var dw=(d.getDay()+6)%7; return addDays(iso,-dw); }
 function ultLabSem(lun){ for(var i=4;i>=0;i--){ var d=addDays(lun,i); if(fEsLab(d)) return d; } return addDays(lun,4); }
 function ultLabMes(iso){ var ym=iso.slice(0,7); var y=+ym.split('-')[0],m=+ym.split('-')[1]; var u=new Date(y,m,0).getDate(); for(var i=u;i>=1;i--){ var d=ym+'-'+String(i).padStart(2,'0'); if(fEsLab(d)) return d; } return ym+'-'+String(u).padStart(2,'0'); }
-function frecDe(tec,ot){ var c=(S.frecPartes||{})[tec+'|'+ot]; return c?c.f:'diario'; }
+function frecDe(tec,ot){ var m=(S.frecPartes||{}); var c=m[tec+'|'+ot]; if(c) return c.f; var g=m[tec+'|*']; return g?g.f:'diario'; }
 function esDueHoy(tec,ot,fecha){ var fr=frecDe(tec,ot); if(fr==='diario') return true; if(fr==='semanal') return fecha===ultLabSem(lunesDe(fecha)); if(fr==='mensual') return fecha===ultLabMes(fecha); return true; }
 /* Filas del técnico que TOCAN hoy, filtradas POR OT. Esto es lo que se envía/firma.
    - Fila sin OT (o "OT -")            => diaria por defecto => se conserva entera.
@@ -1867,7 +1867,7 @@ function esDueHoy(tec,ot,fecha){ var fr=frecDe(tec,ot); if(fr==='diario') return
 function filsDueDe(t,f){
   return filsDe(t,f).map(function(x){
     var ots=splitOT(x.ot).filter(function(o){ return o && /\d/.test(o); });
-    if(!ots.length) return x;                                        // sin OT: diaria
+    if(!ots.length) return esDueHoy(t,'*',f)?x:null;                                        // sin OT: diaria
     var due=ots.filter(function(o){ return esDueHoy(t,o,f); });
     if(!due.length) return null;                                     // hoy no toca ninguna OT de esta fila
     if(due.length===ots.length) return x;                           // todas tocan
@@ -3034,13 +3034,13 @@ function inyectaFrecuencia(){
   }
 }
 function vPartes(){
-  var f=dia, puede=puedoEditar(), tecs=tecsDe(f);
+  var f=dia, puede=puedoEditar(), tecsAll=tecsDe(f), tecs=tecsAll.filter(function(t){ return tecDueHoy(t,f); });
   var env=S.partesEnviados||{}, fir=S.firmas||{};
   var nSel=Object.keys(S.selPartes||{}).length;
   var nEnv=tecs.filter(function(t){return env[f+'|'+t];}).length;
   var nFir=tecs.filter(function(t){return fir[f+'|'+t];}).length;
   var filas=tecs.map(function(t){
-    var rows=filsDe(t,f), ev=env[f+'|'+t], fi=fir[f+'|'+t];
+    var rows=filsDueDe(t,f), ev=env[f+'|'+t], fi=fir[f+'|'+t];
     var mail=(S.correos&&S.correos.get(t))||'';
     var rec=S.partesRecibidos?S.partesRecibidos.get(f+'|'+t):null;
     var trab=rows.map(function(x){ var ini=iniH(x.horario); return '<div class="dim" style="font-size:11.5px">OT <b class="mono">'+esc(splitOT(x.ot).join(' / ')||'-')+'</b> · '+esc(x.cliente||'-')+' · '+esc(x.tecnica||'-')+(ini?' · <b>'+esc(ini)+'</b>':'')+'</div>'; }).join('');
@@ -3057,7 +3057,7 @@ function vPartes(){
     if(puede&&ev) acc+='<button class="btn sm" onclick="A.quitarEnvio(\''+esc(t)+'\')">Quitar envío</button> ';
     return '<tr><td class="tac"><input type="checkbox" '+((S.selPartes||{})[t]?'checked':'')+' onclick="A.selPar(\''+esc(t)+'\')"></td>'+col+'<td>'+trab+'</td><td>'+estEnv+'</td><td>'+estFir+'</td><td class="tar" style="white-space:nowrap">'+acc+'</td></tr>';
   }).join('');
-  if(!tecs.length) filas='<tr><td colspan="6"><div class="empty">Sin trabajos productivos planificados este día.</div></td></tr>';
+  if(!tecs.length) filas='<tr><td colspan="6"><div class="empty">'+(tecsAll.length?('Hoy no toca enviar ning\u00fan parte seg\u00fan la frecuencia configurada. Los semanales/mensuales aparecer\u00e1n en su d\u00eda de env\u00edo. ('+tecsAll.length+' t\u00e9cnico(s) con trabajo, ninguno hoy.)'):'Sin trabajos productivos planificados este d\u00eda.')+'</div></td></tr>';
   var cab='<div class="phead"><div><h2>Partes de trabajo</h2><div class="sub">Solo trabajo <b>PRODUCTIVO</b>. Marca varios y envía en cadena. El técnico firma desde el móvil y la firma se guarda directamente.</div></div><div class="actions"><button class="btn" onclick="A.recargarFirmas()">Actualizar firmas</button></div></div>';
   var barra='<div class="daybar"><button class="btn sm" onclick="A.dia(-1)">'+svg('prev')+'</button><button class="btn sm" onclick="A.hoy()">Hoy</button><button class="btn sm" onclick="A.dia(1)">'+svg('next')+'</button><div class="dlabel">'+esc(fmtDia(f))+'</div><input type="date" value="'+esc(f)+'" onchange="A.setDia(this.value)"><span class="dim" style="margin-left:6px">'+tecs.length+' téc. · '+nEnv+' env. · '+nFir+' firm.</span></div>';
   var acciones='<div class="gbar"><button class="btn sm" onclick="A.selTodos(\'todos\')">Todos</button><button class="btn sm" onclick="A.selTodos(\'pend\')">Pendientes</button><button class="btn sm" onclick="A.selTodos(\'no\')">Ninguno</button><div class="gsep"></div><button class="btn pri sm" onclick="A.colaEnviar()">Enviar seleccionados ('+nSel+')</button></div>';
@@ -3310,15 +3310,17 @@ A.irAPartesManana=function(f){ closeModal(); dia=f; view='partes'; S.selPartes={
    --------------------------------------------------------------------------- */
 A.abrirFrecuencia=function(){
   if(!puedoEditar()){ toast('Solo coordinación o delegado.'); return; }
-  var combos={};
-  S.filas.forEach(function(x){ if(!esProd(x.tipo)) return; splitTecnicos(x.tecnicos).forEach(function(t){ splitOT(x.ot).forEach(function(o){ if(!o) return; var k=t+'|'+o; if(!combos[k]) combos[k]={tec:t,ot:o,cli:x.cliente||'—'}; }); }); });
-  var lista=Object.keys(combos).map(function(k){return combos[k];}).sort(function(a,b){ return a.tec.localeCompare(b.tec)||a.ot.localeCompare(b.ot); });
+  var combos={}, tecsSet={};
+  S.filas.forEach(function(x){ if(!esProd(x.tipo)) return; splitTecnicos(x.tecnicos).forEach(function(t){ if(!t) return; tecsSet[t]=1; splitOT(x.ot).forEach(function(o){ if(!o) return; var k=t+'|'+o; if(!combos[k]) combos[k]={tec:t,ot:o,cli:x.cliente||'—'}; }); }); });
+  var lista=[];
+  Object.keys(tecsSet).sort().forEach(function(t){ lista.push({tec:t,ot:'*',cli:'todas sus OT y filas sin OT',nivel:true}); Object.keys(combos).map(function(k){return combos[k];}).filter(function(c){return c.tec===t;}).sort(function(a,b){ return a.ot.localeCompare(b.ot); }).forEach(function(c){ lista.push(c); }); });
   var h='<h3>Frecuencia de partes</h3><div class="mbody">';
-  h+='<div class="alert i">Configura si cada técnico + OT recibe parte <b>diario</b>, <b>semanal</b> (viernes) o <b>mensual</b> (último laborable del mes). Por defecto es diario.</div>';
+  h+='<div class="alert i">Fija la frecuencia por <b>técnico</b> (fila «TODAS» = todo lo suyo) o afínala por <b>OT</b> (tiene prioridad). Opciones: <b>diario</b>, <b>semanal</b> (viernes) o <b>mensual</b> (último laborable del mes). Por defecto, diario.</div>';
   h+='<table class="t"><thead><tr><th>Técnico</th><th>OT</th><th>Cliente</th><th>Frecuencia</th></tr></thead><tbody>';
   lista.forEach(function(c,i){
     var fr=frecDe(c.tec,c.ot);
-    h+='<tr><td><b>'+esc(c.tec)+'</b></td><td class="mono">'+esc(c.ot)+'</td><td class="dim">'+esc(c.cli)+'</td>';
+    var otTxt=c.nivel?'<b>TODAS</b>':('<span class="mono">'+esc(c.ot)+'</span>');
+    h+='<tr'+(c.nivel?' style="background:#eef4fb"':'')+'><td>'+(c.nivel?('<b>'+esc(c.tec)+'</b>'):('<span class="dim">'+esc(c.tec)+'</span>'))+'</td><td>'+otTxt+'</td><td class="dim">'+esc(c.cli)+'</td>';
     h+='<td><select id="frsel'+i+'" data-tec="'+esc(c.tec)+'" data-ot="'+esc(c.ot)+'"><option value="diario"'+(fr==='diario'?' selected':'')+'>Diario</option><option value="semanal"'+(fr==='semanal'?' selected':'')+'>Semanal (viernes)</option><option value="mensual"'+(fr==='mensual'?' selected':'')+'>Mensual</option></select></td></tr>';
   });
   h+='</tbody></table></div><div class="mfoot"><button class="btn" onclick="A.closeModal()">Cancelar</button><button class="btn pri" onclick="A.guardarFrecuencia('+lista.length+')">Guardar</button></div>';
