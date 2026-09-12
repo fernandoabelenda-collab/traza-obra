@@ -2492,8 +2492,7 @@ A.prodToggle=function(i){ var c=(S._prodCli||[])[i]; if(c==null) return; S.prodE
    Un parte = (fecha, técnico) con trabajo productivo. Estados:
    enviado -> recibido (firma móvil o recibido manual) -> albaranado.
    ===================================================================== */
-function vAlbaranes(){
-  if(!puedoEditar()){ $('main').innerHTML='<div class="card"><div class="empty">Vista de gestión (facturación).</div></div>'; return; }
+function _albVis(){
   var lineas=enAmbito();
   var partes={};
   lineas.forEach(function(l){
@@ -2541,6 +2540,32 @@ function vAlbaranes(){
     }
   });
   vis.sort(function(a,b){ return a.fecha.localeCompare(b.fecha) || String(a.tecnico).localeCompare(String(b.tecnico),'es') || String(a.cliente).localeCompare(String(b.cliente),'es'); });
+  return {arr:arr,vis:vis,total:total,nPendRec:nPendRec,nPendAlb:nPendAlb,nPendProf:nPendProf,nPendFact:nPendFact,nFact:nFact,nBaja:nBaja};
+}
+A.exportAlbaranesCSV=function(){
+  var vis=_albVis().vis;
+  if(!vis.length){ toast('No hay filas que exportar en este filtro.'); return; }
+  var q=function(x){ return '"'+String(x==null?'':x).replace(/"/g,'""')+'"'; };
+  var por=function(info){ return (info&&info.por)?(' ('+info.por+')'):''; };
+  var H=['Fecha','T\u00e9cnico','Cliente','OT','Recepci\u00f3n','Albar\u00e1n','Proforma','Factura','Estado'];
+  var rows=vis.map(function(x){
+    var rec=x.firmado?'Firmado':(x.recMan?'Recibido':'Pendiente');
+    var alb=x.albar?('Albaranado'+por(x.albInfo)):'Pendiente';
+    var pro=x.prof?('Proforma'+por(x.profInfo)):'Pendiente';
+    var fac=x.fact?('Facturado'+por(x.factInfo)):'Pendiente';
+    var est=x.baja?((x.baja.tipo==='NO FACTURABLE')?'No facturable':'Cancelado'):'Activo';
+    return [fmtCorto(x.fecha),x.tecnico,x.cliente,(x.ot||[]).join(' / '),rec,alb,pro,fac,est].map(q).join(';');
+  });
+  var csv='\uFEFF'+H.map(q).join(';')+'\r\n'+rows.join('\r\n');
+  var b=new Blob([csv],{type:'text/csv;charset=utf-8'}),u=URL.createObjectURL(b),a=document.createElement('a');
+  var etq=(modo==='dia'?dia:(rango.desde+'_'+rango.hasta));
+  a.href=u; a.download='CONTROL_FACTURACION_'+etq+'.csv'; a.click();
+  setTimeout(function(){URL.revokeObjectURL(u);},1500); toast(vis.length+' fila(s) exportadas.');
+};
+function vAlbaranes(){
+  if(!puedoEditar()){ $('main').innerHTML='<div class="card"><div class="empty">Vista de gestión (facturación).</div></div>'; return; }
+  var _D=_albVis();
+  var arr=_D.arr, vis=_D.vis, total=_D.total, nPendRec=_D.nPendRec, nPendAlb=_D.nPendAlb, nPendProf=_D.nPendProf, nPendFact=_D.nPendFact, nFact=_D.nFact, nBaja=_D.nBaja;
 
   var amb=(modo==='dia')?fmtDia(dia):(fmtCorto(rango.desde)+' \u2192 '+fmtCorto(rango.hasta));
   var kpi=function(cls,tit,n,sub){ return '<div class="kpi '+cls+'"><div class="k">'+tit+'</div><div class="v" style="font-size:20px">'+n+'</div><div class="s">'+sub+'</div></div>'; };
@@ -2587,7 +2612,7 @@ function vAlbaranes(){
   }).join('');
   if(!vis.length) filas='<tr><td colspan="8"><div class="empty">'+(S.albFiltro==='pendalb'?'\u2714 No queda ning\u00fan trabajo pendiente de albaranar en este periodo.':'Sin trabajos en este filtro.')+'</div></td></tr>';
 
-  var cab='<div class="phead"><div><h2>Control de facturaci\u00f3n</h2><div class="sub">Una l\u00ednea por <b>t\u00e9cnico, d\u00eda y cliente</b> (independiente por cliente). Ciclo: <b>Recepci\u00f3n \u2192 Albar\u00e1n \u2192 Proforma \u2192 Factura</b>. Puedes <b>Cancelar</b> o marcar <b>No facturable</b> por cliente. Los pasos siguen el orden l\u00f3gico pero no bloquean.</div></div><div class="actions"><button class="btn" onclick="A.recargarAlbaranes()">Actualizar</button></div></div>';
+  var cab='<div class="phead"><div><h2>Control de facturaci\u00f3n</h2><div class="sub">Una l\u00ednea por <b>t\u00e9cnico, d\u00eda y cliente</b> (independiente por cliente). Ciclo: <b>Recepci\u00f3n \u2192 Albar\u00e1n \u2192 Proforma \u2192 Factura</b>. Puedes <b>Cancelar</b> o marcar <b>No facturable</b> por cliente. Los pasos siguen el orden l\u00f3gico pero no bloquean.</div></div><div class="actions"><button class="btn" onclick="A.exportAlbaranesCSV()">Exportar Excel</button><button class="btn" onclick="A.recargarAlbaranes()">Actualizar</button></div></div>';
   var tabla='<div class="card" style="overflow:auto"><table class="t"><thead><tr><th style="width:76px">Fecha</th><th style="width:180px">T\u00e9cnico</th><th style="width:200px">Cliente</th><th style="width:130px">Recepci\u00f3n</th><th style="width:120px">Albar\u00e1n</th><th style="width:120px">Proforma</th><th style="width:120px">Factura</th><th class="tar" style="width:170px">Acci\u00f3n</th></tr></thead><tbody>'+filas+'</tbody></table></div>';
   $('main').innerHTML=cab+barraFecha()+barra+kpis+tabla;
 }
