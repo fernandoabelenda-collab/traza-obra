@@ -227,7 +227,8 @@ function svg(n){const P={
    CAPA DE DATOS — Supabase
    ============================================================ */
 const CFGK='trazaobra_cfg';
-function getCfg(){ try{ return JSON.parse(localStorage.getItem(CFGK)||'null'); }catch(e){ return null; } }
+const DEFCFG={url:'https://tebllzlgsmkanqoewjok.supabase.co',key:'sb_publishable_vH7P6yWAQ2WawW5whsw02Q_I3rw0ivH'};
+function getCfg(){ try{ var c=JSON.parse(localStorage.getItem(CFGK)||'null'); if(c&&c.url){ if(String(c.url).replace(/\/+$/,'')===DEFCFG.url) return DEFCFG; if(c.key) return c; } }catch(e){} return DEFCFG; }
 function setCfg(url,key){ localStorage.setItem(CFGK, JSON.stringify({url:url.trim().replace(/\/+$/,''),key:key.trim()})); }
 function delCfg(){ localStorage.removeItem(CFGK); }
 
