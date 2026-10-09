@@ -350,7 +350,7 @@ function calcula(){
       });
     } else {
       const tn=norm(tipo);
-      const concepto = tn.indexOf('FESTIVO')>=0?'FESTIVO' : (tn.indexOf('FORMAC')>=0?'FORMACIÓN' : (tn.indexOf('INTERNO')>=0?'TRABAJO INTERNO':''));
+      const concepto = tn.indexOf('FESTIVO')>=0?'FESTIVO' : (tn.indexOf('FORMAC')>=0?'FORMACIÓN' : (tn.indexOf('INTERNO')>=0?'TRABAJO INTERNO' : (tn.indexOf('DESPLAZ')>=0?'DESPLAZAMIENTO' : (tn.indexOf('OFICINA')>=0?'OFICINA' : (tn.indexOf('GUARDIA')>=0?'GUARDIA':'')))));
       if(concepto){
         const ph=parseHorario(r.horario);
         splitTecnicos(r.tecnicos).forEach(pn=>{
