@@ -71,7 +71,7 @@ details{margin-top:8px}summary{cursor:pointer;font-size:12.5px;color:var(--pri)}
     <h2><span class="step">2</span> Mes y lista de técnicos</h2>
     <div class="row">
       <div style="flex:none;min-width:180px"><label>Mes a procesar</label><input type="month" id="mes"></div>
-      <div><label>Lista de técnicos (Excel, hoja «1. Incentivos y dietas Técnicos»)</label><input type="file" id="fileTec" accept=".xlsx,.xls"></div>
+      <div><label>Excel de tu empresa a rellenar (nombres en A, Nº empleado en B)</label><input type="file" id="fileTec" accept=".xlsx,.xls"></div>
     </div>
     <p class="muted small" style="margin-top:6px">Se respeta el <b>orden</b> y el <b>número</b> de técnicos tal como estén en tu Excel (Nombre en A, Nº empleado en B). El emparejamiento con la planificación es por nombre.</p>
     <div style="margin-top:10px"><button class="btn teal" id="btnAuto" disabled>Autorrellenar</button></div>
@@ -94,7 +94,7 @@ details{margin-top:8px}summary{cursor:pointer;font-size:12.5px;color:var(--pri)}
       <div style="flex:none"><button class="btn pri" id="btnResumen">Descargar Resumen (Excel)</button></div>
       <div style="flex:none"><button class="btn teal" id="btnPartes">Ver partes individuales (imprimir / PDF)</button></div>
     </div>
-    <p class="muted small" style="margin-top:8px">El Resumen se rellena sobre tu propio Excel (mismas columnas y orden), añadiendo la columna <b>Horas Ord</b>. Los partes se abren en una pestaña nueva con botón <b>Imprimir / Guardar PDF</b>.</p>
+    <p class="muted small" style="margin-top:8px">El Resumen se rellena sobre tu propio Excel (mismas columnas y mismo orden), dejando <b>en blanco</b> a quien no esté en la planificación. Los partes se abren en una pestaña nueva con botón <b>Imprimir / Guardar PDF</b>.</p>
   </div>
 
   <p class="muted small" style="text-align:center">TRAZA·MENSUAL · lee <code>planificacion</code> + <code>festivo_local</code> · no escribe nada · OCA Global Cádiz 1110</p>
@@ -136,6 +136,7 @@ const CFGK='trazaobra_cfg';   // mismo origen que TRAZA·OBRA => reutiliza URL+c
 let TOKEN=null, YO={email:'',rol:''};
 let DATA={rows:[],festLocal:new Set()};   // datos leídos del mes
 let LISTA=[];                              // técnicos del Excel {nombre,id,fila}
+let LISTA_PLAN=false;                       // true si la lista se construyó desde la planificación
 let LIBRO=null, HOJA=null, HOJANOM='';     // workbook subido (para reescribir)
 let PLANIFNAMES=[];                        // nombres distintos en planificación
 let MAP={};                                // planifName -> idEmpleado (o '')
@@ -270,8 +271,8 @@ function leerLista(file){
         const tecs=[];
         for(let i=hr+1;i<aoa.length;i++){
           const nombre=String(aoa[i][0]||'').trim();
-          const id=String(aoa[i][1]||'').trim();
-          if(!nombre&&!id) continue;
+          if(!nombre||!/[A-Za-zÀ-ÿ]/.test(nombre)) continue;   // sin nombre o es fecha/número -> no es un técnico
+          const id=String(aoa[i][1]||'').trim()||nombre;        // Nº empleado (col B); si va vacío, se usa el nombre como clave única
           tecs.push({nombre,id,fila:i});
         }
         LIBRO=wb; HOJA=ws; HOJANOM=nom;
@@ -287,8 +288,9 @@ function leerLista(file){
 function autoMap(){
   // nombres distintos en planificación (mes)
   const set=new Set();
-  DATA.rows.forEach(r=>{ const tp=(r.tipo||''); if(tp==='PRODUCTIVO'||norm(tp).indexOf('VACAC')>=0) splitTecnicos(r.tecnicos).forEach(t=>set.add(t)); });
+  DATA.rows.forEach(r=>{ const tp=(r.tipo||''); const tn=norm(tp); if(tp==='PRODUCTIVO'||esProd(tp)||tn.indexOf('VACAC')>=0||tn.indexOf('INTERNO')>=0||tn.indexOf('FORMAC')>=0||tn.indexOf('FESTIVO')>=0) splitTecnicos(r.tecnicos).forEach(t=>set.add(t)); });
   PLANIFNAMES=[...set].sort();
+  if(!LISTA.length){ const byNorm={}; PLANIFNAMES.forEach(function(n){ const k=norm(n); if(!byNorm[k]) byNorm[k]={nombre:n,id:k,fila:0}; }); LISTA=Object.keys(byNorm).sort().map(function(k){return byNorm[k];}); LISTA_PLAN=true; } else { LISTA_PLAN=false; }
   MAP={};
   PLANIFNAMES.forEach(pn=>{
     const np=norm(pn), tp=np.split(' ').filter(Boolean);
@@ -346,6 +348,19 @@ function calcula(){
         if(DATA.festLocal.has(fecha+'|'+norm(pn))) return;   // festivo local del técnico no cuenta como vacación
         acc[id].vac.add(fecha);
       });
+    } else {
+      const tn=norm(tipo);
+      const concepto = tn.indexOf('FESTIVO')>=0?'FESTIVO' : (tn.indexOf('FORMAC')>=0?'FORMACIÓN' : (tn.indexOf('INTERNO')>=0?'TRABAJO INTERNO':''));
+      if(concepto){
+        const ph=parseHorario(r.horario);
+        splitTecnicos(r.tecnicos).forEach(pn=>{
+          const id=nameToId[pn]; if(!id||!acc[id]) return;
+          const dd=acc[id].dias[fecha] || (acc[id].dias[fecha]={fr:[],cli:new Set(),pro:new Set(),ubi:new Set(),tec:new Set(),dieta:false,pn:new Set()});
+          ph.franjas.forEach(f=>dd.fr.push(f));
+          dd.cli.add(concepto);
+          dd.pn.add(pn);
+        });
+      }
     }
   });
   // consolidar por técnico
@@ -397,7 +412,17 @@ function pintaPreview(){
 
 /* ---------- Resumen Excel (reescribe tu propio libro) ---------- */
 function descargaResumen(){
-  if(!LIBRO||!HOJA){ alert('Falta la lista de técnicos.'); return; }
+  if(!LIBRO||!HOJA||LISTA_PLAN){
+    // Sin Excel válido (lista desde planificación o sin subir): Resumen nuevo (lista desde la planificación): construir un Resumen nuevo desde cero.
+    if(!RESULT||!RESULT.length){ alert('Primero pulsa Autorrellenar.'); return; }
+    const aoa=[['Nombre Técnico','Id Empleado','Dietas','Horas Ord','H.L-V','H.Sáb','H.Dom','H.F.Loc','Festivos días','Días','Vacaciones']];
+    RESULT.forEach(t=>{ const T=t.tot; const empId=/^\d+$/.test(String(t.id||''))?t.id:''; aoa.push([t.nombre,empId,T.die,T.ord,T.lv,T.sab,T.dom,T.floc,T.fest,(t.dias?t.dias.length:0),T.vac]); });
+    const nwb=XLSX.utils.book_new(); const nws=XLSX.utils.aoa_to_sheet(aoa);
+    nws['!cols']=[{wch:32},{wch:12},{wch:8},{wch:9},{wch:8},{wch:8},{wch:8},{wch:9},{wch:12},{wch:7},{wch:11}];
+    XLSX.utils.book_append_sheet(nwb,nws,'Resumen');
+    XLSX.writeFile(nwb,'Resumen_'+$('mes').value+'_1110.xlsx');
+    return;
+  }
   const ws=HOJA;
   const range=XLSX.utils.decode_range(ws['!ref']);
   // localizar cabecera y columnas por nombre
@@ -422,19 +447,14 @@ function descargaResumen(){
   const cDom=findCol('H DOM','DOM','DOMINGO');
   const cFloc=findCol('H F LOC','F LOC','FLOC','FESTIVO LOCAL');
   const cFest=findCol('FESTIVOS','FEST DIAS','FEST DIAS N','FEST');
-  // columna Horas Ord: si no existe, se crea al final
-  let cOrd=findCol('HORAS ORD','H ORD','ORDINARIAS','ORD');
-  let newRange=range;
-  if(cOrd<0){ cOrd=range.e.c+1; newRange={s:range.s,e:{r:range.e.r,c:cOrd}};
-    ws[XLSX.utils.encode_cell({r:hr,c:cOrd})]={t:'s',v:'Horas Ord'}; }
-  // índice idEmpleado -> fila (col B)
-  const idCol=findCol('ID EMPLEADO','N EMPLEADO','NUMERO EMPLEADO','EMPLEADO')>=0?findCol('ID EMPLEADO','N EMPLEADO','NUMERO EMPLEADO','EMPLEADO'):1;
   const put=(r,c,val)=>{ if(c<0)return; const ref=XLSX.utils.encode_cell({r,c}); if(val===0||val){ ws[ref]={t:'n',v:Number(val)}; } };
   RESULT.forEach(t=>{
     const r=t.fila; if(r==null) return; const T=t.tot;
-    put(r,cDie,T.die); put(r,cOrd,T.ord); put(r,cLV,T.lv); put(r,cSab,T.sab); put(r,cDom,T.dom); put(r,cFloc,T.floc); put(r,cFest,T.fest);
+    const enPlan=(t.dias&&t.dias.length>0)||(T&&T.vac>0);   // sólo técnicos presentes en la planificación del mes
+    if(!enPlan) return;                                     // no está -> se deja EN BLANCO (nombre y Nº intactos)
+    put(r,cDie,T.die); put(r,cLV,T.lv); put(r,cSab,T.sab); put(r,cDom,T.dom); put(r,cFloc,T.floc); put(r,cFest,T.fest);
   });
-  ws['!ref']=XLSX.utils.encode_range(newRange.s?newRange:range);
+  ws['!ref']=XLSX.utils.encode_range(range);
   const ym=$('mes').value;
   XLSX.writeFile(LIBRO, 'Resumen_'+ym+'_1110.xlsx');
 }
@@ -503,22 +523,22 @@ function verPartes(){
   const conDatos=RESULT.filter(t=>t.dias.length);
   if(!conDatos.length){ alert('No hay técnicos con trabajo este mes.'); return; }
   const ym=$('mes').value;
-  const w=window.open('','_blank');
-  if(!w){ alert('El navegador bloqueó la ventana. Permite ventanas emergentes.'); return; }
-  const cuerpo=conDatos.map(t=>parteHTML(t,ym)).join('');
-  w.document.open();
-  w.document.write('<!DOCTYPE html><html lang="es"><head><meta charset="utf-8"><title>Partes '+ym+'</title><style>'+parteCSS()+'</style></head><body>'+
+  const html='<!DOCTYPE html><html lang="es"><head><meta charset="utf-8"><title>Partes '+ym+'</title><style>'+parteCSS()+'</style></head><body>'+
     '<div class="noprint"><button onclick="window.print()">Imprimir / Guardar PDF (todos)</button> &nbsp; '+conDatos.length+' parte(s) · '+ym+'</div>'+
-    cuerpo+'</body></html>');
-  w.document.close();
+    conDatos.map(t=>parteHTML(t,ym)).join('')+'</body></html>';
+  const w=window.open('','_blank');
+  if(w){ w.document.open(); w.document.write(html); w.document.close(); return; }
+  // ventana bloqueada (p.ej. desde file://): descargar como archivo HTML para abrir e imprimir/guardar PDF
+  const b=new Blob([html],{type:'text/html;charset=utf-8'}), u=URL.createObjectURL(b), a=document.createElement('a');
+  a.href=u; a.download='Partes_'+ym+'_1110.html'; a.click(); setTimeout(()=>URL.revokeObjectURL(u),1500);
 }
 
 /* ---------- Orquestación ---------- */
-function refreshAuto(){ $('btnAuto').disabled=!(TOKEN && $('mes').value && LISTA.length); }
+function refreshAuto(){ $('btnAuto').disabled=!(TOKEN && $('mes').value); }
 async function autorrellenar(){
   try{
     if(!TOKEN){ estado('Primero entra (paso 1).','st-err'); return; }
-    if(!LISTA.length){ estado('Sube la lista de técnicos.','st-err'); return; }
+    if(!LISTA.length){ estado('Sin lista válida del Excel: uso los técnicos de la planificación.','st-ok'); }
     $('btnAuto').disabled=true;
     await leerMes($('mes').value);
     autoMap(); pintaMap();
