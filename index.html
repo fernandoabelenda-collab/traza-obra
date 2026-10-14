@@ -1991,10 +1991,11 @@ var OCA_LOGO='data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAYEBAUEBAY
    INTERNO = productivo en todo (Producción €, Carga, Horas extra, Partes, Mensual).
    EXTERNO = categoría aparte; solo cuenta en Producción € y Carga por técnico. */
 try{ if(typeof TIPOS!=='undefined' && TIPOS.indexOf('APUNTE CONTABLE INTERNO')<0){ TIPOS.push('APUNTE CONTABLE INTERNO','APUNTE CONTABLE EXTERNO'); } }catch(e){}
+try{ if(typeof TIPOS!=='undefined' && TIPOS.indexOf('TXT')<0){ TIPOS.push('TXT'); } }catch(e){}
 S.filtroApunte = S.filtroApunte || 'prod';   // 'prod' (PROD+INTERNO) | 'int' | 'ext'
 function esProd(t){ return t==='PRODUCTIVO' || t==='APUNTE CONTABLE INTERNO'; }
 function esParteEnviable(t){ return !!t && t!=='APUNTE CONTABLE EXTERNO'; }   // Partes: todos los tipos (incl. vacaciones/baja/festivo), salvo apuntes externos
-function conceptoParte(x){ if(esProd(x.tipo)) return x.cliente||''; var m={'VACACIONES':'VACACIONES','BAJA':'BAJA','FESTIVO':'FESTIVO','FORMACION':'FORMACI\u00d3N','DESPLAZAMIENTO':'DESPLAZAMIENTO','OFICINA':'OFICINA','GUARDIA':'GUARDIA','INTERNO':'TRABAJO INTERNO'}; return m[x.tipo] || x.tipo || x.cliente || ''; }
+function conceptoParte(x){ if(esProd(x.tipo)) return x.cliente||''; var m={'VACACIONES':'VACACIONES','BAJA':'BAJA','FESTIVO':'FESTIVO','FORMACION':'FORMACI\u00d3N','DESPLAZAMIENTO':'DESPLAZAMIENTO','OFICINA':'OFICINA','GUARDIA':'GUARDIA','INTERNO':'TRABAJO INTERNO','TXT':'TXT · TIEMPO POR TIEMPO'}; return m[x.tipo] || x.tipo || x.cliente || ''; }
 function esApExt(t){ return t==='APUNTE CONTABLE EXTERNO'; }
 function pasaApunte(t){ if(S.filtroApunte==='int') return t==='APUNTE CONTABLE INTERNO'; if(S.filtroApunte==='ext') return esApExt(t); return esProd(t); }
 function barraApunte(){
@@ -2872,6 +2873,9 @@ function crearEnlaceParte(t,f){
 }
 function cuerpoCorreo(t,f,url){
   var rows=filsDueDe(t,f);
+  if(rows.length && rows.every(function(x){return (x.tipo||'')==='TXT';})){
+    return ['Hola '+t+',','','El '+fmtDia(f)+' tienes un día de DESCANSO TXT (Tiempo por Tiempo).','','Es un descanso compensado: hoy no tienes parte que firmar.','','Un saludo.','Delegación 1110 · Cádiz · OCA Global'].join('\n');
+  }
   var L=['Hola '+t+',','','Este es tu parte de trabajo para el '+fmtDia(f)+'.','','Trabajos previstos y hora de inicio:'];
   rows.forEach(function(x){ var p=[(conceptoParte(x)||'-')]; if(x.centro)p.push(x.centro); if(x.ubicacion)p.push(x.ubicacion); if(x.tecnica)p.push(x.tecnica); var ini=iniH(x.horario); L.push('· '+p.join(' · ')+(ini?' — inicio '+ini+' h':'')); });
   L.push('','ABRIR Y FIRMAR:',url||enlaceParteURL(t,f),'');
@@ -2881,6 +2885,12 @@ function cuerpoCorreo(t,f,url){
 function abrirGmailParte(t,f){
   var email=(S.correos&&S.correos.get(t))||'';
   var su='Parte de trabajo · '+fmtCorto(f)+' · '+t;
+  var _rt=filsDueDe(t,f);
+  if(_rt.length && _rt.every(function(x){return (x.tipo||'')==='TXT';})){
+    su='Descanso TXT (Tiempo por Tiempo) · '+fmtCorto(f)+' · '+t;
+    window.open('https://mail.google.com/mail/?view=cm&fs=1&to='+encodeURIComponent(email)+'&su='+encodeURIComponent(su)+'&body='+encodeURIComponent(cuerpoCorreo(t,f,'')),'_blank');
+    return;
+  }
   var w=window.open('about:blank','_blank');           // abrir ya (gesto del usuario) para que no lo bloquee
   crearEnlaceParte(t,f).then(function(url){
     var gm='https://mail.google.com/mail/?view=cm&fs=1&to='+encodeURIComponent(email)+'&su='+encodeURIComponent(su)+'&body='+encodeURIComponent(cuerpoCorreo(t,f,url));
@@ -3003,7 +3013,7 @@ function vHorasFuera(){
   var acc={};
   lineas.forEach(function(l){
     if(!l.tecnico) return;
-    if(['VACACIONES','BAJA','FESTIVO','APUNTE CONTABLE EXTERNO'].indexOf(l.tipo)>=0) return;
+    if(['VACACIONES','BAJA','FESTIVO','TXT','APUNTE CONTABLE EXTERNO'].indexOf(l.tipo)>=0) return;
     if(!(l.franjas&&l.franjas.length)) return;
     var k=l.tecnico+'|'+l.fecha;
     var o=acc[k]||(acc[k]={tecnico:l.tecnico,fecha:l.fecha,franjas:[],horarios:[]});
@@ -3029,6 +3039,29 @@ function vHorasFuera(){
   var totalExceso=dias.reduce(function(t,d){return t+d.exceso;},0);
   var totalFF=dias.filter(function(d){return d.finde||d.festi;}).reduce(function(t,d){return t+d.exceso;},0);
   var totalHE=totalExceso-totalFF;
+  /* ===== TXT · Tiempo por Tiempo: cada día TXT compensa 6 h de extras L-V del MISMO MES (nunca finde/festivo) ===== */
+  var TXT_H=6;
+  var txtDaysByTM={};
+  lineas.forEach(function(l){ if((l.tipo||'')!=='TXT'||!l.tecnico) return; var k=l.tecnico+'|'+l.fecha.slice(0,7); (txtDaysByTM[k]=txtDaysByTM[k]||{})[l.fecha]=1; });
+  var lvByTM={};
+  dias.forEach(function(d){ if(d.finde||d.festi) return; var k=d.tecnico+'|'+d.fecha.slice(0,7); (lvByTM[k]=lvByTM[k]||[]).push({fecha:d.fecha,ex:d.exceso}); });
+  var compByTec={};
+  Object.keys(txtDaysByTM).forEach(function(k){
+    var tec=k.slice(0,k.lastIndexOf('|'));
+    var nTXT=Object.keys(txtDaysByTM[k]).length;
+    var need=TXT_H*nTXT;
+    var lv=(lvByTM[k]||[]).slice().sort(function(a,b){return a.fecha.localeCompare(b.fecha);});
+    var taken=[],rem=need;
+    for(var i=0;i<lv.length && rem>0;i++){ var tk=Math.min(lv[i].ex,rem); if(tk>0){ taken.push({fecha:lv[i].fecha,taken:Math.round(tk*100)/100}); rem=Math.round((rem-tk)*100)/100; } }
+    var comp=Math.round((need-rem)*100)/100;
+    var c=compByTec[tec]||(compByTec[tec]={txtDias:0,comp:0,falta:0,note:[]});
+    c.txtDias+=nTXT; c.comp=Math.round((c.comp+comp)*100)/100; c.falta=Math.round((c.falta+rem)*100)/100; c.note=c.note.concat(taken);
+  });
+  resumen.forEach(function(r){ var c=compByTec[r.tecnico]; r.heBruto=Math.round(r.he*100)/100; r.txtComp=c?c.comp:0; r.txtDias=c?c.txtDias:0; r.txtFalta=c?c.falta:0; r.heNeto=Math.round(Math.max(r.he-r.txtComp,0)*100)/100; r.he=r.heNeto; r.horas=Math.round((r.heNeto+r.ff)*100)/100; r.compNote=c?c.note:[]; });
+  resumen.sort(function(a,b){return b.horas-a.horas;});
+  var totalComp=Object.keys(compByTec).reduce(function(t,k){return t+compByTec[k].comp;},0);
+  totalHE=Math.round(Math.max(totalHE-totalComp,0)*100)/100;
+  totalExceso=Math.round((totalHE+totalFF)*100)/100;
   dias.sort(function(a,b){ return b.fecha.localeCompare(a.fecha)||b.exceso-a.exceso; });
   var dow=['dom','lun','mar','mié','jue','vie','sáb'];
   var fRes=resumen.map(function(r){ return '<tr><td><b>'+esc(r.tecnico)+'</b></td><td class="tar mono">'+r.dias+'</td><td class="tar mono">'+(r.he>0?'+'+nf(r.he,1):'—')+'</td><td class="tar mono" style="color:var(--pur)">'+(r.ff>0?'+'+nf(r.ff,1):'—')+'</td><td class="tar mono" style="color:var(--warn);font-weight:700">+'+nf(r.horas,1)+'</td></tr>'; }).join('');
@@ -3040,7 +3073,20 @@ function vHorasFuera(){
   if(flDias.length){ flHTML='<div class="card"><div class="ch">Festivos locales marcados</div><table class="t"><thead><tr><th style="width:110px">Fecha</th><th>Técnicos</th><th class="tar"></th></tr></thead><tbody>'+flDias.map(function(d){ return '<tr><td class="mono">'+esc(fmtCorto(d))+'</td><td>'+flPorDia[d].sort().map(function(t){ return '<span class="badge b-pur" style="margin-right:4px">'+esc(t)+'</span>'; }).join('')+'</td><td class="tar"><button class="btn sm" onclick="A.abrirFestLocal(\''+d+'\')">Editar</button></td></tr>'; }).join('')+'</tbody></table></div>'; }
   var kpis='<div class="kpis" style="padding:0 0 11px"><div class="kpi '+(totalExceso>0?'w':'g')+'"><div class="k">Total horas extra</div><div class="v">'+nf(totalExceso,1)+'</div><div class="s">'+dias.length+' día(s) con exceso</div></div><div class="kpi"><div class="k">Exceso &gt;8h (L-V)</div><div class="v">'+nf(totalHE,1)+'</div><div class="s">días laborables</div></div><div class="kpi b"><div class="k">Finde / festivo</div><div class="v">'+nf(totalFF,1)+'</div><div class="s">jornada completa</div></div><div class="kpi a"><div class="k">Técnicos afectados</div><div class="v">'+resumen.length+'</div><div class="s">en el periodo</div></div></div>';
   var cab='<div class="phead"><div><h2>Horas fuera de jornada</h2><div class="sub">Días laborables: lo que pase de <b>8 h</b>. Fin de semana y festivos: todas las horas. El <b>festivo local se marca por técnico</b>, según su municipio.</div></div><div class="actions"><button class="btn pri" onclick="A.abrirFestLocal()">Festivos locales</button></div></div>';
-  $('main').innerHTML=cab+barraFecha()+barraFiltros()+kpis+cuerpo+flHTML;
+  var _dmc=function(f){ return f.slice(8,10)+'/'+f.slice(5,7); };
+  var txtRows=resumen.filter(function(r){return r.txtDias>0;});
+  var txtHTML='';
+  if(txtRows.length){
+    txtHTML='<div class="card"><div class="ch">Compensación TXT · Tiempo por Tiempo</div>'+
+      '<div class="sub" style="margin:-4px 0 8px">Cada día TXT descuenta 6 h de extras L-V del mismo mes (nunca de finde/festivo), de las más antiguas a las más recientes.</div>'+
+      '<table class="t"><thead><tr><th>Técnico</th><th class="tar">Días TXT</th><th class="tar">Extras L-V brutas</th><th class="tar">Compensación TXT</th><th class="tar">Extras L-V netas</th><th>Compensado con</th></tr></thead><tbody>'+
+      txtRows.map(function(r){
+        var note=r.compNote.length?r.compNote.map(function(x){return esc(_dmc(x.fecha))+' ('+nf(x.taken,1)+' h)';}).join(' + '):'—';
+        var av=r.txtFalta>0?'<div class="badge b-bad" style="margin-top:3px">⚠ Faltan '+nf(r.txtFalta,1)+' h de extras L-V para cubrir el TXT este mes</div>':'';
+        return '<tr><td><b>'+esc(r.tecnico)+'</b></td><td class="tar mono">'+r.txtDias+'</td><td class="tar mono">'+nf(r.heBruto,1)+'</td><td class="tar mono" style="color:var(--bad);font-weight:700">−'+nf(r.txtComp,1)+'</td><td class="tar mono" style="font-weight:700">'+nf(r.heNeto,1)+'</td><td class="mono" style="font-size:11px">'+note+av+'</td></tr>';
+      }).join('')+'</tbody></table></div>';
+  }
+  $('main').innerHTML=cab+barraFecha()+barraFiltros()+kpis+cuerpo+txtHTML+flHTML;
 }
 
 /* ---------------------------------------------------------------------------
