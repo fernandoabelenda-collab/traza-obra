@@ -3610,5 +3610,33 @@ navAdd({id:'calendario',t:'Calendario',ic:'cal'},false);
   },400);
 })();
 
+/* === FIX informes: deduplicar por num_informe antes de subir =====================
+   Evita el error PostgreSQL "ON CONFLICT DO UPDATE command cannot affect row a
+   second time" cuando el .trazaend trae el mismo nº de informe repetido.
+   Conserva la ULTIMA aparición (la más reciente) y avisa de los repetidos. */
+try{
+  if(typeof procesarInformes==='function'){
+    var _procInfBase=procesarInformes;
+    procesarInformes=function(informes){
+      var r=_procInfBase(informes);
+      var vistos={}, dups={}, dedup=[];
+      for(var i=r.out.length-1;i>=0;i--){
+        var k=r.out[i].num_informe;
+        if(vistos[k]){ dups[k]=1; continue; }
+        vistos[k]=1; dedup.push(r.out[i]);
+      }
+      dedup.reverse(); r.out=dedup;
+      var dl=Object.keys(dups);
+      if(dl.length){
+        try{ alert('Aviso: el archivo traía '+dl.length+' nº de informe repetido(s).\n'+
+          'Se conserva solo la última versión de cada uno; la subida ya no se bloqueará.\n\n'+
+          'Repetidos: '+dl.join(', ')+'\n\nRevísalos en TRAZA·END si procede.'); }catch(_){}
+      }
+      r.dups=dl;
+      return r;
+    };
+  }
+}catch(e){}
+
 })();
 </script>
