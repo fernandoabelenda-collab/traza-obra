@@ -324,7 +324,7 @@ function calcula(){
   // nombre planificación -> idEmpleado
   const nameToId=MAP;
   // preparar acumuladores por técnico de lista
-  const acc={}; LISTA.forEach(L=>{ acc[L.id]={L,dias:{},vac:new Set()}; });
+  const acc={}; LISTA.forEach(L=>{ acc[L.id]={L,dias:{},vac:new Set(),txt:new Set()}; });
   DATA.rows.forEach(r=>{
     const tipo=(r.tipo||''); const fecha=String(r.fecha).slice(0,10);
     if(esProd(tipo)){
@@ -348,6 +348,8 @@ function calcula(){
         if(DATA.festLocal.has(fecha+'|'+norm(pn))) return;   // festivo local del técnico no cuenta como vacación
         acc[id].vac.add(fecha);
       });
+    } else if(norm(tipo)==='TXT'){
+      splitTecnicos(r.tecnicos).forEach(pn=>{ const id=nameToId[pn]; if(!id||!acc[id]) return; acc[id].txt.add(fecha); });
     } else {
       const tn=norm(tipo);
       const concepto = tn.indexOf('FESTIVO')>=0?'FESTIVO' : (tn.indexOf('FORMAC')>=0?'FORMACIÓN' : (tn.indexOf('INTERNO')>=0?'TRABAJO INTERNO' : (tn.indexOf('DESPLAZ')>=0?'DESPLAZAMIENTO' : (tn.indexOf('OFICINA')>=0?'OFICINA' : (tn.indexOf('GUARDIA')>=0?'GUARDIA':'')))));
@@ -382,8 +384,15 @@ function calcula(){
         tecni:[...dd.tec].join(' / '),ent:hhmm(u.ini),sal:hhmm(u.fin),ord,lv,sab,dom,floc,fest,die});
     });
     const vac=[...(A.vac||[])];
-    return {id:L.id,nombre:L.nombre,fila:L.fila,dias,vac,
-      tot:{ord:r2(tOrd),lv:r2(tLV),sab:r2(tSab),dom:r2(tDom),floc:r2(tFloc),fest:tFest,die:tDie,vac:vac.length,
+    const txt=[...(A.txt||[])];
+    // TXT: cada día descuenta 6 h de extras L-V del mes, de las más antiguas a las más recientes
+    const TXT_H=6; const lvBruto=r2(tLV); let _need=r2(TXT_H*txt.length), _comp=0; const _note=[];
+    const _lvDias=dias.filter(d=>d.lv>0).slice().sort((a,b)=>a.fecha.localeCompare(b.fecha));
+    for(let i=0;i<_lvDias.length && _need>0;i++){ const tk=Math.min(_lvDias[i].lv,_need); if(tk>0){ _note.push({fecha:_lvDias[i].fecha,taken:r2(tk)}); _comp=r2(_comp+tk); _need=r2(_need-tk); } }
+    const lvNeto=r2(Math.max(lvBruto-_comp,0)); const txtFalta=r2(_need);
+    return {id:L.id,nombre:L.nombre,fila:L.fila,dias,vac,txt,
+      tot:{ord:r2(tOrd),lv:lvNeto,lvBruto:lvBruto,txtComp:r2(_comp),txtDias:txt.length,txtFalta:txtFalta,txtNote:_note,
+            sab:r2(tSab),dom:r2(tDom),floc:r2(tFloc),fest:tFest,die:tDie,vac:vac.length,
             diasLab:dias.filter(d=>d.ord>0).length}};
   });
 }
@@ -391,7 +400,7 @@ const r2=x=>Math.round(x*100)/100;
 
 /* ---------- Preview ---------- */
 function pintaPreview(){
-  const conDatos=RESULT.filter(t=>t.dias.length);
+  const conDatos=RESULT.filter(t=>t.dias.length||(t.txt&&t.txt.length)||(t.vac&&t.vac.length));
   const filas=RESULT.map(t=>{
     const T=t.tot, vacio=!t.dias.length;
     return '<tr'+(vacio?' style="opacity:.5"':'')+'><td>'+esc(t.nombre)+'</td><td class="n">'+esc(t.id)+'</td>'+
@@ -477,6 +486,7 @@ table.d{width:100%;border-collapse:collapse;margin-top:6px;font-size:9px}
 .d td.l{text-align:left}
 .d tr.we td{background:#f0f2f5}
 .d tr.vac td{background:#eaf4ea;color:#1E8E5A;font-weight:600}
+.d tr.txt td{background:#fff3df;color:#9A6400;font-weight:600}
 .d tr.tot td{background:#eef4fc;font-weight:700}
 .res{display:flex;gap:16px;margin-top:12px}
 .res table{border-collapse:collapse;font-size:9.5px}.res td{border:1px solid #ddd;padding:3px 8px}.res td.k{background:#f6f8fb}
@@ -489,20 +499,22 @@ function parteHTML(t,ym){
   const [y,m]=ym.split('-').map(Number);
   const dset={}; t.dias.forEach(d=>dset[d.fecha]=d);
   const vacSet=new Set(t.vac);
+  const txtSet=new Set(t.txt||[]);
   const filas=diasDelMes(ym).map(fecha=>{
     const day=wd(fecha), we=(day===0||day===6), fn=esFestNac(fecha);
     const d=dset[fecha];
     const num=Number(fecha.slice(-2));
     const marca=day===6?' SÁBADO':day===0?' DOMINGO':fn?' FESTIVO':'';
     const vday=vacSet.has(fecha)?1:'';
-    const rowcls=vday?'vac':((we||fn)?'we':'');
-    if(!d){ return `<tr class="${rowcls}"><td>${num}${marca}</td><td class="l">${vday?'VACACIONES':''}</td><td class="l"></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td>${vday}</td></tr>`; }
+    const txtday=txtSet.has(fecha);
+    const rowcls=vday?'vac':(txtday?'txt':((we||fn)?'we':''));
+    if(!d){ const lbl=vday?'VACACIONES':(txtday?'TXT · TIEMPO POR TIEMPO':''); return `<tr class="${rowcls}"><td>${num}${marca}</td><td class="l">${lbl}</td><td class="l"></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td>${vday}</td></tr>`; }
     const cell=v=>v?v:'';
     return `<tr class="${rowcls}"><td>${num}${marca}</td><td class="l" title="${esc(d.cli)}">${esc(d.cli)}</td><td class="l" title="${esc(d.pro)}">${esc(d.pro)}</td>`+
       `<td>${esc(d.ent)}</td><td>${esc(d.sal)}</td><td>${cell(d.ord)}</td><td>${cell(d.die||'')}</td><td>${cell(d.lv)}</td><td>${cell(d.sab)}</td><td>${cell(d.dom)}</td><td>${cell(d.floc)}</td><td>${vday}</td></tr>`;
   }).join('');
   const T=t.tot;
-  const totrow=`<tr class="tot"><td colspan="5">TOTALES DEL MES</td><td>${T.ord}</td><td>${T.die}</td><td>${T.lv}</td><td>${T.sab}</td><td>${T.dom}</td><td>${T.floc}</td><td>${T.vac}</td></tr>`;
+  const totrow=`<tr class="tot"><td colspan="5">TOTALES DEL MES</td><td>${T.ord}</td><td>${T.die}</td><td>${T.lvBruto}</td><td>${T.sab}</td><td>${T.dom}</td><td>${T.floc}</td><td>${T.vac}</td></tr>`;
   return `<div class="parte">
     <div class="hdr"><div class="ttl">PARTE MENSUAL DE TRABAJO Y CONTROL DE HORAS<br>DEPARTAMENTO DE RECURSOS HUMANOS · REGISTRO DE JORNADA</div><div class="logo"><img src="${OCA_LOGO}" alt="OCA Global"></div></div>
     <div class="meta">
@@ -512,7 +524,7 @@ function parteHTML(t,ym){
     <table class="d"><thead><tr><th style="width:64px">DÍA</th><th>CLIENTE / LUGAR</th><th>PROYECTO</th><th>H.ENT</th><th>H.SAL</th><th>H.ORD</th><th>DIETA</th><th>H.L-V</th><th>H.SÁB</th><th>H.DOM</th><th>H.F.LOC</th><th style="width:46px">VACAC.</th></tr></thead>
     <tbody>${filas}${totrow}</tbody></table>
     <div class="res">
-      <table><tr><td class="k">Total Horas Ordinarias</td><td>${T.ord}</td></tr><tr><td class="k">Total Extras L-V</td><td>${T.lv}</td></tr><tr><td class="k">Total Extras Sábados</td><td>${T.sab}</td></tr><tr><td class="k">Total Extras Domingos</td><td>${T.dom}</td></tr><tr><td class="k">Total Festivos Locales</td><td>${T.floc}</td></tr><tr><td class="k">Días festivos trabajados</td><td>${T.fest}</td></tr><tr><td class="k">Total Dietas</td><td>${T.die}</td></tr><tr><td class="k">Días de vacaciones disfrutadas</td><td>${T.vac}</td></tr></table>
+      <table><tr><td class="k">Total Horas Ordinarias</td><td>${T.ord}</td></tr>${T.txtDias>0?`<tr><td class="k">Extras L-V (brutas)</td><td>${T.lvBruto}</td></tr><tr><td class="k">Compensación TXT (${T.txtDias}×6h)</td><td>−${T.txtComp}</td></tr><tr><td class="k"><b>Extras L-V (netas)</b></td><td><b>${T.lv}</b></td></tr><tr><td class="k">TXT compensado con</td><td style="font-size:8px">${(T.txtNote||[]).map(x=>x.fecha.slice(8,10)+'/'+x.fecha.slice(5,7)+' ('+x.taken+' h)').join(' + ')||'—'}${T.txtFalta>0?' · ⚠ faltan '+T.txtFalta+' h':''}</td></tr>`:`<tr><td class="k">Total Extras L-V</td><td>${T.lv}</td></tr>`}<tr><td class="k">Total Extras Sábados</td><td>${T.sab}</td></tr><tr><td class="k">Total Extras Domingos</td><td>${T.dom}</td></tr><tr><td class="k">Total Festivos Locales</td><td>${T.floc}</td></tr><tr><td class="k">Días festivos trabajados</td><td>${T.fest}</td></tr><tr><td class="k">Total Dietas</td><td>${T.die}</td></tr><tr><td class="k">Días de vacaciones disfrutadas</td><td>${T.vac}</td></tr></table>
       <div class="firma"><div class="l"></div>Firma del Técnico (Conforme)<br>Cádiz, a fecha de revisión</div>
     </div>
     <div class="legal">Documento generado a partir del registro de jornada de la Delegación 1110 (TRAZA·OBRA). Las horas ordinarias se computan hasta la 8ª hora en día laborable; las que exceden se registran como extras L-V. Sábados, domingos y festivos se computan como jornada completa en su categoría. Verifíquese antes de la aceptación.</div>
@@ -520,7 +532,7 @@ function parteHTML(t,ym){
   </div>`;
 }
 function verPartes(){
-  const conDatos=RESULT.filter(t=>t.dias.length);
+  const conDatos=RESULT.filter(t=>t.dias.length||(t.txt&&t.txt.length)||(t.vac&&t.vac.length));
   if(!conDatos.length){ alert('No hay técnicos con trabajo este mes.'); return; }
   const ym=$('mes').value;
   const html='<!DOCTYPE html><html lang="es"><head><meta charset="utf-8"><title>Partes '+ym+'</title><style>'+parteCSS()+'</style></head><body>'+
