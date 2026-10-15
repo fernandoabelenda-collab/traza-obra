@@ -585,9 +585,8 @@ function enviarIncentivos(){
   _incMsg('\u2713 <b>'+nTec+' t\u00e9cnicos</b> \u00b7 mes <b>'+(M.mes||'?')+'</b> \u2014 descargado <b>horas_incentivos_'+(M.mes||'mes')+'.json</b>. En TRAZA\u00b7INCENTIVOS pulsa \u00abCargar horas (.json)\u00bb.',true);
 }
 function abrirIncentivos(){
-  var u=localStorage.getItem('traza_inc_url')||'';
-  if(!u){ u=prompt('Pega la direcci\u00f3n (URL o ruta) de TRAZA\u00b7INCENTIVOS (se recuerda):','file:///C:/Users/fabelenda/Downloads/TRAZA-INCENTIVOS.html'); if(u){ u=u.trim(); if(u) localStorage.setItem('traza_inc_url',u); } }
-  if(u){ try{ window.open(u,'_blank'); }catch(e){} }
+  var u='https://fernandoabelenda-collab.github.io/traza-obra/TRAZA-INCENTIVOS.html';
+  try{ window.open(u,'_blank'); }catch(e){ try{ location.href=u; }catch(_){} }
 }
 function recalc(){ calcula(); pintaPreview(); pintaMap(); estado('Recalculado con tus emparejamientos.','st-ok'); }
 
