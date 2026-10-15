@@ -148,6 +148,8 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
   <input type="file" id="fileOca" accept=".xlsx,.xls">
   <button class="btn ghost" id="btnPegar">📋 Pegar listado</button>
   <button class="btn ghost" id="btnTraer">⤵ Traer horas del mes (MENSUAL)</button>
+  <label class="btn ghost" for="fileHoras">📄 Cargar horas (.json)</label>
+  <input type="file" id="fileHoras" accept=".json" style="display:none">
   <button class="btn ghost small" id="btnDemo">👁 Ver ejemplo (OCA jul-2026)</button>
   <div class="sep"></div>
   <button class="btn teal" id="btnGuardar">💾 Guardar sesión</button>
@@ -567,6 +569,19 @@ document.getElementById("btnPegar").addEventListener("click",()=>{
   document.getElementById("paOk").onclick=()=>{const list=parsePasted(document.getElementById("paTA").value);
     if(!list.length){toast("No se detectaron técnicos");return;}setRoster(list,true);closeModal();};});
 document.getElementById("btnTraer").addEventListener("click",traerHorasMensual);
+document.getElementById("fileHoras").addEventListener("change",e=>{
+  const f=e.target.files[0]; if(!f) return; const rd=new FileReader();
+  rd.onload=ev=>{ try{
+    const M=JSON.parse(ev.target.result);
+    if(!M||!M.tec){ toast("El archivo no contiene horas válidas."); return; }
+    try{ localStorage.setItem("traza_inc_bridge", ev.target.result); }catch(_){}
+    if(!ST.rows.length){ toast("Horas cargadas. Ahora pega el listado (Nombre + Total) y se rellenarán solas."); return; }
+    let nn=0; ST.rows.forEach(r=>{ const b=M.tec[_bnorm(r.name)]; if(b){ ["dietas","hLV","hSab","hDom","hFest","festDias"].forEach(k=>{ if(b[k]!=null) r[k]=b[k]; }); nn++; } });
+    saveMonth(); render();
+    toast("Horas cargadas"+(M.mes?(" ("+M.mes+")"):"")+": "+nn+" técnico(s).");
+  }catch(err){ toast("No se pudo leer el archivo: "+(err.message||err)); } };
+  rd.readAsText(f); e.target.value="";
+});
 document.getElementById("btnGuardar").addEventListener("click",()=>{
   const data={app:"TRAZA-INCENTIVOS",version:SEED_VERSION,key:curKey(),mes:+document.getElementById("selMes").value,
     anio:+document.getElementById("selAnio").value,rows:ST.rows,rates:RATES,params:PARAMS,extras:EXTRAS,exported:new Date().toISOString()};
