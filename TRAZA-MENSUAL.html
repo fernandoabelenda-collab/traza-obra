@@ -93,6 +93,7 @@ details{margin-top:8px}summary{cursor:pointer;font-size:12.5px;color:var(--pri)}
     <div class="row" style="margin-top:12px">
       <div style="flex:none"><button class="btn pri" id="btnResumen">Descargar Resumen (Excel)</button></div>
       <div style="flex:none"><button class="btn teal" id="btnPartes">Ver partes individuales (imprimir / PDF)</button></div>
+      <div style="flex:none"><button class="btn" id="btnInc">Enviar horas a Incentivos ▸</button></div>
     </div>
     <p class="muted small" style="margin-top:8px">El Resumen se rellena sobre tu propio Excel (mismas columnas y mismo orden), dejando <b>en blanco</b> a quien no esté en la planificación. Los partes se abren en una pestaña nueva con botón <b>Imprimir / Guardar PDF</b>.</p>
   </div>
@@ -416,6 +417,7 @@ function pintaPreview(){
   if(sinAsig.length) av+='<div class="pill p-warn" style="display:block;margin-bottom:6px">Nombres de planificación sin asignar ('+sinAsig.length+'): '+esc(sinAsig.join(', '))+'. Ve al paso 3 para asignarlos.</div>';
   if(sinPlan.length) av+='<div class="pill p-dim" style="display:block;margin-bottom:6px">Técnicos de tu lista sin datos este mes ('+sinPlan.length+'): '+esc(sinPlan.join(', '))+'. Quedan a 0.</div>';
   $('avisos').innerHTML=av;
+  try{ guardaBridgeIncentivos(true); }catch(e){}
   $('cardRes').classList.remove('hid');
 }
 
@@ -560,6 +562,14 @@ async function autorrellenar(){
   }catch(e){ estado('Error: '+esc(e.message||e),'st-err'); }
   finally{ $('btnAuto').disabled=false; }
 }
+function guardaBridgeIncentivos(silent){
+  if(!RESULT||!RESULT.length){ if(!silent) estado('Primero pulsa Autorrellenar.','st-err'); return; }
+  function bnorm(x){ return String(x==null?'':x).toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^A-Z0-9]/g,''); }
+  var tec={};
+  RESULT.forEach(function(t){ var T=t.tot||{}; tec[bnorm(t.nombre)]={id:t.id,nombre:t.nombre,dietas:T.die||0,hLV:T.lv||0,hSab:T.sab||0,hDom:T.dom||0,hFest:T.floc||0,festDias:T.fest||0}; });
+  try{ localStorage.setItem('traza_inc_bridge', JSON.stringify({mes:$('mes').value,tec:tec,ts:Date.now()})); }catch(e){ if(!silent) estado('No se pudo preparar Incentivos: '+esc(e.message||e),'st-err'); return; }
+  if(!silent) estado('Horas enviadas a Incentivos ('+Object.keys(tec).length+' t\u00e9cnicos, mes '+$('mes').value+'). Abre TRAZA\u00b7INCENTIVOS y pulsa \u00abTraer horas\u00bb o pega el listado.','st-ok');
+}
 function recalc(){ calcula(); pintaPreview(); pintaMap(); estado('Recalculado con tus emparejamientos.','st-ok'); }
 
 /* ---------- Eventos ---------- */
@@ -575,6 +585,7 @@ $('btnAuto').addEventListener('click',autorrellenar);
 $('btnRecalc').addEventListener('click',recalc);
 $('btnResumen').addEventListener('click',descargaResumen);
 $('btnPartes').addEventListener('click',verPartes);
+$('btnInc').addEventListener('click',function(){ guardaBridgeIncentivos(false); });
 </script>
 </body>
 </html>
