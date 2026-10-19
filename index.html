@@ -434,6 +434,7 @@ function splitTecnicas(s){ if(!s)return[]; let x=String(s);
 function splitOT(s){ if(s==null)return[]; const m=String(s).match(/\d{7,8}/g)||[];
   return [...new Set(m.map(x=>x.replace(/^0+(?=\d{7})/,'')))].filter(x=>x.length===7); }
 function horasDe(f){ const h=parseHorario(f.horario); return h.horas; }
+function fechaValida(iso){ if(!/^\d{4}-\d{2}-\d{2}$/.test(iso)) return false; if(iso<'2024-01-01'||iso>'2030-12-31') return false; var d=new Date(iso+'T00:00:00Z'); return !isNaN(d.getTime()) && d.toISOString().slice(0,10)===iso; }
 
 /* ---------- Validación por celda ---------- */
 function valida(f,k){
@@ -641,6 +642,8 @@ async function setVal(f,k,v){
   if(col&&col.ty==='num'){ v=(v===''||v==null)?null:Number(String(v).replace(',','.')); if(isNaN(v))v=null; }
   else if(k==='ot'){ v=String(v||'').replace(/[^\d\s\/,]/g,'').trim(); }
   else if(['cliente','centro','proyecto','tecnicos','tecnica','ubicacion'].includes(k)){ v=String(v||'').trim(); }
+  else if(k==='fecha'){ v=String(v==null?'':v).trim();
+    if(v && !fechaValida(v)){ DB.unlock(f.id); toast('Fecha no válida o fuera de rango 2024–2030: <b>'+esc(v)+'</b>. No se ha guardado.'); return; } }
   else v=(v==null?'':v);
   const antes=f[k];
   if(String(antes==null?'':antes)===String(v==null?'':v)) return;   // sin cambios
@@ -711,8 +714,8 @@ async function pegar(txt){
   const parse=(col,val)=>{
     let v=(val==null?'':val).trim();
     if(col.ty==='date'){ const m=/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})$/.exec(v);
-      if(m){let y=+m[3];if(y<100)y+=2000; return y+'-'+String(+m[2]).padStart(2,'0')+'-'+String(+m[1]).padStart(2,'0');}
-      return /^\d{4}-\d{2}-\d{2}$/.test(v)?v:undefined; }
+      if(m){let y=+m[3];if(y<100)y+=2000; const iso=y+'-'+String(+m[2]).padStart(2,'0')+'-'+String(+m[1]).padStart(2,'0'); return fechaValida(iso)?iso:undefined;}
+      return (/^\d{4}-\d{2}-\d{2}$/.test(v)&&fechaValida(v))?v:undefined; }
     if(col.ty==='num'){ if(v==='')return null; const n=Number(v.replace(/\./g,'').replace(',','.')); return isNaN(n)?null:n; }
     if(col.ty==='sel'&&v){ const hit=(col.op||[]).find(o=>o.toUpperCase()===v.toUpperCase()); return hit!==undefined?hit:v; }
     return v;
@@ -1078,12 +1081,12 @@ const XC={fecha:0,tecnicos:1,cliente:2,proyecto:3,tecnica:4,horario:5,horas:6,es
 const txt=v=>v==null?'':(typeof v==='object'?(v.__d||v.__t||''):String(v).trim());
 const num=v=>{if(v==null)return null;if(typeof v==='number')return v;
   const s=String(v).replace(/[^\d,.\-]/g,'').replace(',','.');if(s===''||s==='-')return null;const n=Number(s);return isNaN(n)?null:n;};
-function parseFechaX(v){ if(v&&typeof v==='object'&&v.__d)return{iso:v.__d,ok:true};
+function parseFechaX(v){ if(v&&typeof v==='object'&&v.__d)return fechaValida(v.__d)?{iso:v.__d,ok:true}:{ok:false,motivo:'Fecha fuera de rango (2024–2030): '+v.__d};
   const s=txt(v); if(!s)return{ok:false,motivo:'Fecha vacía'};
   let m=/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/.exec(s);
-  if(m){let y=+m[3];if(y<100)y+=2000;return{iso:y+'-'+String(+m[2]).padStart(2,'0')+'-'+String(+m[1]).padStart(2,'0'),ok:true};}
+  if(m){let y=+m[3];if(y<100)y+=2000; const iso=y+'-'+String(+m[2]).padStart(2,'0')+'-'+String(+m[1]).padStart(2,'0'); return fechaValida(iso)?{iso:iso,ok:true}:{ok:false,motivo:'Fecha fuera de rango (2024–2030): "'+s+'"'};}
   m=/^([\d,\s]+)[\/](\d{1,2})[\/](\d{4})$/.exec(s);
-  if(m)return{multi:m[1].split(',').map(x=>x.trim()).filter(Boolean).map(d=>m[3]+'-'+String(+m[2]).padStart(2,'0')+'-'+String(+d).padStart(2,'0')),ok:true};
+  if(m){const ms=m[1].split(',').map(x=>x.trim()).filter(Boolean).map(d=>m[3]+'-'+String(+m[2]).padStart(2,'0')+'-'+String(+d).padStart(2,'0')).filter(fechaValida); return ms.length?{multi:ms,ok:true}:{ok:false,motivo:'Fecha(s) fuera de rango: "'+s+'"'};}
   return{ok:false,motivo:'Fecha no interpretable: "'+s+'"'}; }
 /* Reglas confirmadas por Dirección */
 function mapeaCliente(raw,f){
@@ -1262,6 +1265,7 @@ async function confirmarImport(){
   if(!puedoEditar()){ toast('Tu rol es de solo consulta.'); return; }
   closeModal(); toast('Importando al servidor…');
   try{
+    if(R.desde && (R.desde<'2024-01-01' || R.hasta>'2030-12-31')){ alert('Importación cancelada por seguridad: rango de fechas anómalo ('+R.desde+' → '+R.hasta+').\nRevisa las fechas del Excel; no se ha borrado ni importado nada.'); return; }
     if(R.desde) await DB.removeRango(R.desde,R.hasta);
     await DB.insertMany(R.filas);
     S.rechazos=S.rechazos.filter(x=>x.importId!==R.impId).concat(R.rech);
@@ -3609,34 +3613,6 @@ navAdd({id:'calendario',t:'Calendario',ic:'cal'},false);
     setInterval(compruebaAvisoPartes,120000);
   },400);
 })();
-
-/* === FIX informes: deduplicar por num_informe antes de subir =====================
-   Evita el error PostgreSQL "ON CONFLICT DO UPDATE command cannot affect row a
-   second time" cuando el .trazaend trae el mismo nº de informe repetido.
-   Conserva la ULTIMA aparición (la más reciente) y avisa de los repetidos. */
-try{
-  if(typeof procesarInformes==='function'){
-    var _procInfBase=procesarInformes;
-    procesarInformes=function(informes){
-      var r=_procInfBase(informes);
-      var vistos={}, dups={}, dedup=[];
-      for(var i=r.out.length-1;i>=0;i--){
-        var k=r.out[i].num_informe;
-        if(vistos[k]){ dups[k]=1; continue; }
-        vistos[k]=1; dedup.push(r.out[i]);
-      }
-      dedup.reverse(); r.out=dedup;
-      var dl=Object.keys(dups);
-      if(dl.length){
-        try{ alert('Aviso: el archivo traía '+dl.length+' nº de informe repetido(s).\n'+
-          'Se conserva solo la última versión de cada uno; la subida ya no se bloqueará.\n\n'+
-          'Repetidos: '+dl.join(', ')+'\n\nRevísalos en TRAZA·END si procede.'); }catch(_){}
-      }
-      r.dups=dl;
-      return r;
-    };
-  }
-}catch(e){}
 
 })();
 </script>
