@@ -3687,7 +3687,7 @@ function vSolicitudes(){
   var barra='<div class="card"><div class="cb" style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">'+
     tab('pend','Pendientes')+tab('plan','Planificadas')+tab('desc','Descartadas')+tab('todas','Todas')+
     '<input id="sol_q" placeholder="Buscar cliente, asunto, técnica, lugar…" value="'+esc(SOL.q)+'" oninput="A.solBuscar(this.value)" '+
-    'style="margin-left:auto;min-width:240px;padding:7px 9px;border:1px solid var(--line);border-radius:8px"></div></div>';
+    'style="margin-left:auto;flex:1 1 200px;max-width:340px;min-width:160px;padding:7px 9px;border:1px solid var(--line);border-radius:8px"></div></div>';
   var err=SOL.error?'<div class="card"><div class="cb" style="color:var(--bad)">No se pudieron cargar las solicitudes: '+esc(SOL.error)+'</div></div>':'';
   var arr=solFiltradas();
   var filas=arr.map(function(s){
@@ -3696,17 +3696,17 @@ function vSolicitudes(){
       '<td class="mono" style="white-space:nowrap">'+esc(solRecibido(s.recibido))+'</td>'+
       '<td>'+solUrg(s)+'</td>'+
       '<td><b>'+esc(s.cliente||'—')+'</b>'+(s.num_solicitud?'<div class="dim" style="font-size:11px">Nº '+esc(s.num_solicitud)+'</div>':'')+'</td>'+
-      '<td style="max-width:320px">'+esc(s.asunto||'')+'</td>'+
+      '<td style="min-width:180px;max-width:260px;word-break:break-word">'+esc(s.asunto||'')+'</td>'+
       '<td style="white-space:nowrap">'+solFecha(s.fecha_trabajo)+(s.hora?'<div class="dim" style="font-size:11px">'+esc(s.hora)+'</div>':'')+'</td>'+
-      '<td>'+esc(s.tecnica||'')+'</td><td>'+esc(s.lugar||'')+'</td>'+
+      '<td style="max-width:110px;word-break:break-word">'+esc(s.tecnica||'')+'</td><td style="max-width:130px;word-break:break-word">'+esc(s.lugar||'')+'</td>'+
       '<td>'+(s.tecnico_asignado?esc(s.tecnico_asignado):'<span class="dim">—</span>')+'</td>'+
       '<td>'+solEstBadge(s.estado)+'</td>'+
       '<td class="tar">'+(drive?'<a href="'+esc(drive)+'" target="_blank" rel="noopener" onclick="event.stopPropagation()">Drive ('+Number(s.adjuntos||0)+')</a>':'')+'</td></tr>';
     if(SOL.abierta===s.id) fila+='<tr><td colspan="10" style="background:#FBFCFE">'+solDetalle(s)+'</td></tr>';
     return fila;
   }).join('');
-  var tabla='<div class="card"><table class="t"><thead><tr><th>Recibido</th><th>Urgencia</th><th>Cliente</th><th>Asunto</th><th>Fecha</th><th>Técnica</th><th>Lugar</th><th>Técnico</th><th>Estado</th><th class="tar">Archivo</th></tr></thead><tbody>'+
-    (filas||'<tr><td colspan="10"><div class="empty">No hay solicitudes en este apartado.</div></td></tr>')+'</tbody></table></div>';
+  var tabla='<div class="card"><div style="overflow-x:auto;-webkit-overflow-scrolling:touch"><table class="t" style="font-size:12px;min-width:880px"><thead><tr><th>Recibido</th><th>Urgencia</th><th>Cliente</th><th>Asunto</th><th>Fecha</th><th>Técnica</th><th>Lugar</th><th>Técnico</th><th>Estado</th><th class="tar">Archivo</th></tr></thead><tbody>'+
+    (filas||'<tr><td colspan="10"><div class="empty">No hay solicitudes en este apartado.</div></td></tr>')+'</tbody></table></div></div>';
   $('main').innerHTML=cab+barra+err+tabla;
   var qi=$('sol_q'); if(qi && document.activeElement!==qi && SOL._foco){ qi.focus(); qi.setSelectionRange(qi.value.length,qi.value.length); }
 }
@@ -3717,13 +3717,13 @@ function solDetalle(s){
   var optE=SOL_EST.map(function(e){ return '<option'+(e===s.estado?' selected':'')+'>'+esc(e)+'</option>'; }).join('');
   var pdf=solUrlSegura(s.pdf_url), drive=solUrlSegura(s.carpeta_url);
   var dato=function(k,v){ return v?'<div><span class="dim" style="font-size:11px">'+k+'</span><br>'+esc(v)+'</div>':''; };
-  return '<div style="display:grid;grid-template-columns:2fr 1fr;gap:16px;padding:6px 2px" onclick="event.stopPropagation()">'+
-    '<div><div class="dim" style="font-size:11px;margin-bottom:4px">Texto del correo</div>'+
+  return '<div style="display:flex;flex-wrap:wrap;gap:16px;padding:6px 2px;max-width:calc(100vw - 300px)" onclick="event.stopPropagation()">'+
+    '<div style="flex:2 1 380px;min-width:0"><div class="dim" style="font-size:11px;margin-bottom:4px">Texto del correo</div>'+
       '<div style="white-space:pre-wrap;font-size:12px;max-height:260px;overflow:auto;border:1px solid var(--line);border-radius:8px;padding:8px;background:#fff">'+esc(s.texto||'(sin texto)')+'</div>'+
       '<div style="margin-top:8px;display:flex;gap:12px;flex-wrap:wrap;font-size:12px">'+
         (pdf?'<a href="'+esc(pdf)+'" target="_blank" rel="noopener">Correo en PDF</a>':'')+
         (drive?'<a href="'+esc(drive)+'" target="_blank" rel="noopener">Carpeta con adjuntos ('+Number(s.adjuntos||0)+')</a>':'')+'</div></div>'+
-    '<div style="display:flex;flex-direction:column;gap:8px;font-size:12px">'+
+    '<div style="flex:1 1 240px;display:flex;flex-direction:column;gap:8px;font-size:12px;min-width:0">'+
       dato('Remitente',s.remitente)+dato('Taller / proyecto',s.taller)+dato('Relacionada con',s.relacionada)+
       '<div><label class="dim" style="font-size:11px">Técnico asignado</label><select id="sol_tec" style="width:100%;padding:6px;border:1px solid var(--line);border-radius:8px">'+optT+'</select></div>'+
       '<div><label class="dim" style="font-size:11px">Estado</label><select id="sol_est" style="width:100%;padding:6px;border:1px solid var(--line);border-radius:8px">'+optE+'</select></div>'+
