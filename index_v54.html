@@ -3670,9 +3670,9 @@ function solFiltradas(){
     if(SOL.filtro==='desc' && ['RECHAZADA','NO ES SOLICITUD'].indexOf(s.estado)<0) return false;
     if(q){ var t=[s.cliente,s.asunto,s.tecnica,s.lugar,s.num_solicitud,s.tecnico_asignado,s.remitente].join(' ').toLowerCase(); if(t.indexOf(q)<0) return false; }
     return true;
-  }).sort(function(a,b){
-    if(SOL.filtro==='pend'){ var fa=a.fecha_trabajo||'9999', fb=b.fecha_trabajo||'9999'; if(fa!==fb) return fa<fb?-1:1; }
-    return a.recibido<b.recibido?1:-1;
+  }).sort(function(a,b){   // siempre por fecha de llegada: la más reciente arriba
+    var ta=new Date(a.recibido).getTime()||0, tb=new Date(b.recibido).getTime()||0;
+    return tb-ta || (Number(b.id)-Number(a.id));
   });
 }
 function vSolicitudes(){
