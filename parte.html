@@ -108,7 +108,19 @@ function enviar(){
   if(fi)body.firma_inspector=fi;
   if(fc)body.firma_cliente=fc;
   if(nc&&nc.value.trim())body.nombre_cliente=nc.value.trim();
-  if(ob&&ob.textContent.trim())body.observaciones=ob.textContent.trim();
+  if(ob){var _obt=(ob.innerText||ob.textContent||'').trim();if(_obt)body.observaciones=_obt;}
+  /* Capturar la tabla de FACTURACION (cantidad/concepto/articulo/importe) que rellena el tecnico */
+  var _lineas=[];
+  var _filas=document.querySelectorAll('table.fact tbody tr');
+  for(var _fx=0;_fx<_filas.length;_fx++){
+    var _cel=_filas[_fx].querySelectorAll('.ed');
+    var _c=(_cel[0]?(_cel[0].innerText||_cel[0].textContent||''):'').trim();
+    var _d=(_cel[1]?(_cel[1].innerText||_cel[1].textContent||''):'').trim();
+    var _a=(_cel[2]?(_cel[2].innerText||_cel[2].textContent||''):'').trim();
+    var _i=(_cel[3]?(_cel[3].innerText||_cel[3].textContent||''):'').trim();
+    if(_c||_d||_a||_i)_lineas.push({c:_c,d:_d,a:_a,i:_i});
+  }
+  if(_lineas.length)body.lineas=_lineas;
   fetch(D.su+'/rest/v1/firma_parte',{
     method:'POST',
     headers:{'Content-Type':'application/json','apikey':D.sk,'Authorization':'Bearer '+D.sk,'Prefer':'resolution=merge-duplicates'},
