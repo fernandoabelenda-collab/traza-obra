@@ -2838,7 +2838,9 @@ function parteFirmadoHTML(f,tec,firma){
   h+='<div class="fld"><span class="lb">Descripción Trabajos:</span> <span class="vl">'+esc(f.proyecto||'')+'</span></div>';
   h+='<div class="sec">FACTURACIÓN</div>'+campoP('Fecha de Inspección',fmtCorto(f.fecha));
   h+='<table class="fact"><thead><tr><th style="width:64px">CANTIDAD</th><th>CONCEPTO</th><th style="width:118px">ARTÍCULO COMERCIAL</th><th style="width:74px">IMPORTE</th></tr></thead><tbody>';
-  for(var k=0;k<4;k++){ h+='<tr><td>&nbsp;</td><td></td><td></td><td></td></tr>'; }
+  var _ln=(firma&&firma.lineas&&firma.lineas.length)?firma.lineas:[];
+  var _nf=Math.max(4,_ln.length);
+  for(var k=0;k<_nf;k++){ var _L=_ln[k]||{}; h+='<tr><td>'+(esc(_L.c||'')||'&nbsp;')+'</td><td>'+esc(_L.d||'')+'</td><td>'+esc(_L.a||'')+'</td><td>'+esc(_L.i||'')+'</td></tr>'; }
   h+='</tbody></table>';
   h+='<div class="sec">OBSERVACIONES</div><div class="obs">'+(firma.observaciones?esc(firma.observaciones):'')+'</div>';
   h+='<div class="firmas">';
